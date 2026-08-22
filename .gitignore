@@ -1,0 +1,26 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# ---- Node / Next.js ----
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# ---- Environment ----
+# Never commit real API keys.
+.env
+.env.local
+.env*.local
+
+# ---- Editors / OS ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
