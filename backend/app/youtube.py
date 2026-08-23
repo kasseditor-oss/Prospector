@@ -31,6 +31,7 @@ from typing import Any, Iterable, Sequence
 
 import httpx
 
+from .socials import Social, extract_socials, merge_from_videos
 from .keyring import (
     COST_CHANNELS_LIST,
     COST_PLAYLIST_ITEMS_LIST,
@@ -80,6 +81,9 @@ class Channel:
     uploads_playlist: str | None
     email: str | None = None
     last_upload_at: datetime | None = None
+
+    #: Other networks the channel published in its description.
+    socials: list[Social] = field(default_factory=list)
 
     #: Uploads per calendar month for the last 12 months, oldest first.
     #: Empty until :meth:`YouTubeClient.enrich_upload_history` has run.
@@ -307,6 +311,7 @@ class YouTubeClient:
                             (content.get("relatedPlaylists") or {}).get("uploads")
                         ),
                         email=extract_email(description),
+                        socials=extract_socials(description),
                     )
                 )
         return out
@@ -363,6 +368,15 @@ class YouTubeClient:
             )
             if dt is not None
         ]
+        # Video descriptions ride along with the history we already paid for,
+        # and they are where most creators actually keep their links.
+        descriptions = [
+            (item.get("snippet") or {}).get("description") or ""
+            for item in data.get("items") or []
+        ]
+        if descriptions:
+            channel.socials = merge_from_videos(channel.socials, descriptions)
+
         if not dates:
             return
         channel.last_upload_at = max(dates)

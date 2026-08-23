@@ -19,8 +19,19 @@ next-env.d.ts
 .env.local
 .env*.local
 
+# ---- Build artifacts ----
+# 100 MB of regenerable output. compilar.bat rebuilds both from source.
+backend/build/
+backend/dist/
+
 # ---- Editors / OS ----
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+
+# Local lead base: your prospecting data, not code.
+backend/data/
+*.db
+*.db-wal
+*.db-shm

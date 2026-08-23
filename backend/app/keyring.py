@@ -121,12 +121,45 @@ class InMemoryKeyring:
         """
         with self._lock:
             candidates = [k for k in self._keys if k.remaining >= cost]
-            if not candidates:
+            if candidates:
+                return max(candidates, key=lambda k: k.remaining)
+
+            # Why there is nothing to use changes what the user should do, so
+            # the message has to distinguish the cases. Telling someone with a
+            # mistyped key to "wait for the quota reset" sends them away for a
+            # day over a problem they could fix in seconds.
+            if not self._keys:
                 raise QuotaExhausted(
-                    f"No key has {cost} units left. Add another key or wait for "
-                    f"the reset at midnight US/Pacific."
+                    "Nenhuma chave cadastrada. Adicione a sua chave da API do "
+                    "YouTube para buscar."
                 )
-            return max(candidates, key=lambda k: k.remaining)
+
+            invalid = [k for k in self._keys if k.disabled_reason == "invalid"]
+            if len(invalid) == len(self._keys):
+                if len(invalid) == 1:
+                    raise QuotaExhausted(
+                        "O YouTube recusou esta chave. Confira se você copiou "
+                        "ela inteira e se a YouTube Data API v3 está ativada no "
+                        "projeto do Google Cloud."
+                    )
+                raise QuotaExhausted(
+                    "O YouTube recusou todas as chaves cadastradas. Confira se "
+                    "foram copiadas por inteiro e se a YouTube Data API v3 está "
+                    "ativada nos projetos."
+                )
+
+            if invalid:
+                raise QuotaExhausted(
+                    f"Sem quota disponível: {len(invalid)} de {len(self._keys)} "
+                    f"chaves foram recusadas pelo YouTube e o resto atingiu o "
+                    f"limite de hoje. A quota zera à meia-noite no Pacífico."
+                )
+
+            raise QuotaExhausted(
+                f"As chaves cadastradas não têm as {cost} unidades que esta "
+                f"busca precisa. Reduza o modo intensivo, adicione outra chave "
+                f"ou espere o reset à meia-noite no Pacífico."
+            )
 
     def charge(self, key_state: KeyState, cost: int) -> None:
         with self._lock:

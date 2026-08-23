@@ -11,7 +11,44 @@
    a media query renders one theme's text on the other theme's ground.
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+/* --- fontes --- */
+/* Servidas do próprio aplicativo, não do Google. Um programa de desktop não
+   deveria depender da internet para desenhar a própria interface: sem rede, um
+   @import externo cai para a fonte do sistema e o layout muda. Só os subsets
+   latin e latin-ext, que é o que o português usa — 136 KB no total.
+   Roboto e Roboto Mono são Apache 2.0, livres para redistribuir. */
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/roboto-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/roboto-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Roboto Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/roboto-mono-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Roboto Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/roboto-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 :root {
   /* --- ground and chrome (light) --- */
@@ -19,36 +56,45 @@
   --panel: #FFFFFF;
   --panel-2: #F2F4F7;
   --panel-3: #E4E8ED;
+  /* --rule is decoration (row hairlines, panel edges); --rule-2 outlines form
+     controls, so it has to clear 3:1 on its own. */
   --rule: #C7D0DA;
-  --rule-2: #ADB8C5;
+  --rule-2: #7E8896;
 
   /* --- ink --- */
   --ink: #12161B;
   --ink-2: #4B5663;
-  --ink-3: #66717C;
+  --ink-3: #5F6A76;
 
-  /* --- signal: the clip-label teal. Active state, playhead, "worth it". --- */
-  --signal: #0A6F67;
-  --signal-bright: #0E8C80;
-  --signal-soft: #D6EFEC;
-  --signal-ink: #04211F;
+  /* --- signal: blue. Active state, playhead, "worth it". --- */
+  --signal: #1B57D6;
+  --signal-bright: #2E6BF0;
+  --signal-soft: #E3ECFD;
+  --signal-ink: #FFFFFF;
 
   /* --- meter bands. Semantic, and separate from the accent. --- */
-  --meter-lo: #828D99;
-  --meter-mid: #916116;
-  --meter-hi: #0A6F67;
+  --meter-lo: #7A8590;
+  --meter-mid: #8A5D14;
+  --meter-hi: #1B57D6;
 
-  --warn: #916116;
+  --warn: #8A5D14;
   --warn-soft: #F7EBD7;
   --danger: #B03A2E;
   --danger-soft: #F8E3E0;
 
-  /* --- pipeline stages --- */
-  --st-new: #606A77;      --st-new-bg: #E5E9EE;
-  --st-sent: #1E5FCB;     --st-sent-bg: #DDE8FA;
-  --st-reply: #0A6F67;    --st-reply-bg: #D6EFEC;
-  --st-deal: #6B3BAA;     --st-deal-bg: #E9E0F7;
-  --st-won: #916116;      --st-won-bg: #F7EBD7;
+  /* --- brand marks. A logo has to look like itself, so these are the real
+     brand colours, tuned per theme: TikTok cyan and Kick green vanish on
+     white, and the dark equivalents vanish on near-black. --- */
+  --br-instagram: #C1275C;
+  --br-tiktok: #0F6F6B;
+  --br-x: #15181C;
+  --br-discord: #4A57C8;
+  --br-twitch: #7B36E8;
+  --br-telegram: #1B7FB4;
+  --br-threads: #1A1D21;
+  --br-facebook: #1266D6;
+  --br-linkedin: #0A66C2;
+  --br-kick: #3B8F12;
 
   /* --- elevation. Software chrome sits close to the surface. --- */
   --lift-1: 0 1px 2px rgba(18, 22, 27, .06);
@@ -65,83 +111,97 @@
   --s5: 24px; --s6: 32px; --s7: 48px; --s8: 72px;
 
   /* --- type --- */
-  --display: 'Archivo', system-ui, sans-serif;
-  --body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', Consolas, monospace;
+  --display: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --body: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'Roboto Mono', ui-monospace, 'Cascadia Code', Consolas, monospace;
 
   --transport-h: 56px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bay: #0F1216;
-    --panel: #161A20;
-    --panel-2: #1C222A;
-    --panel-3: #252C36;
-    --rule: #2F3945;
-    --rule-2: #414D5C;
+    /* Near-black and almost neutral: the faint cool cast stops it reading
+       brown beside the blue, without drifting into slate grey. */
+    --bay: #06070A;
+    --panel: #10131A;
+    --panel-2: #171B23;
+    --panel-3: #1F242E;
+    --rule: #272D38;
+    --rule-2: #626D7C;
 
-    --ink: #E7EBF0;
-    --ink-2: #9AA6B4;
-    --ink-3: #7E8A97;
+    --ink: #EDF1F6;
+    --ink-2: #9BA6B4;
+    --ink-3: #7C8794;
 
-    --signal: #38CFC0;
-    --signal-bright: #5BE3D6;
-    --signal-soft: #0C2E2B;
-    --signal-ink: #04211F;
+    --signal: #4C8DFF;
+    --signal-bright: #75A9FF;
+    --signal-soft: #0F1B2F;
+    --signal-ink: #03070F;
 
-    --meter-lo: #68737F;
-    --meter-mid: #E8A33D;
-    --meter-hi: #38CFC0;
+    --meter-lo: #69737F;
+    --meter-mid: #E0A03A;
+    --meter-hi: #4C8DFF;
 
     --warn: #E8A33D;
-    --warn-soft: #33260F;
-    --danger: #E4695C;
-    --danger-soft: #351916;
+    --warn-soft: #2A1F0C;
+    --danger: #F0736A;
+    --danger-soft: #2C1310;
 
-    --st-new: #93A0AE;      --st-new-bg: #232A33;
-    --st-sent: #6EA2F5;     --st-sent-bg: #15273D;
-    --st-reply: #38CFC0;    --st-reply-bg: #0C2E2B;
-    --st-deal: #B08BE6;     --st-deal-bg: #231934;
-    --st-won: #E8A33D;      --st-won-bg: #33260F;
+    --br-instagram: #E1306C;
+    --br-tiktok: #25F4EE;
+    --br-x: #9CA9BC;
+    --br-discord: #7C8BF5;
+    --br-twitch: #A970FF;
+    --br-telegram: #3FA3E0;
+    --br-threads: #C0C8D4;
+    --br-facebook: #1877F2;
+    --br-linkedin: #38A0DC;
+    --br-kick: #53FC18;
 
-    --lift-1: 0 1px 2px rgba(0, 0, 0, .45);
+    --br-instagram: #E1306C;
+  --br-tiktok: #25F4EE;
+  --br-x: #9CA9BC;
+  --br-discord: #7C8BF5;
+  --br-twitch: #A970FF;
+  --br-telegram: #3FA3E0;
+  --br-threads: #C0C8D4;
+  --br-facebook: #1877F2;
+  --br-linkedin: #38A0DC;
+  --br-kick: #53FC18;
+
+  --lift-1: 0 1px 2px rgba(0, 0, 0, .45);
     --lift-2: 0 6px 16px rgba(0, 0, 0, .5);
     --lift-3: 0 18px 44px rgba(0, 0, 0, .6);
   }
 }
 
 :root[data-theme="dark"] {
-  --bay: #0F1216;
-  --panel: #161A20;
-  --panel-2: #1C222A;
-  --panel-3: #252C36;
-  --rule: #2F3945;
-  --rule-2: #414D5C;
+  /* Near-black and almost neutral: the faint cool cast stops it reading
+     brown beside the blue, without drifting into slate grey. */
+  --bay: #06070A;
+  --panel: #10131A;
+  --panel-2: #171B23;
+  --panel-3: #1F242E;
+  --rule: #272D38;
+  --rule-2: #626D7C;
 
-  --ink: #E7EBF0;
-  --ink-2: #9AA6B4;
-  --ink-3: #7E8A97;
+  --ink: #EDF1F6;
+  --ink-2: #9BA6B4;
+  --ink-3: #7C8794;
 
-  --signal: #38CFC0;
-  --signal-bright: #5BE3D6;
-  --signal-soft: #0C2E2B;
-  --signal-ink: #04211F;
+  --signal: #4C8DFF;
+  --signal-bright: #75A9FF;
+  --signal-soft: #0F1B2F;
+  --signal-ink: #03070F;
 
-  --meter-lo: #68737F;
-  --meter-mid: #E8A33D;
-  --meter-hi: #38CFC0;
+  --meter-lo: #69737F;
+  --meter-mid: #E0A03A;
+  --meter-hi: #4C8DFF;
 
   --warn: #E8A33D;
-  --warn-soft: #33260F;
-  --danger: #E4695C;
-  --danger-soft: #351916;
-
-  --st-new: #93A0AE;      --st-new-bg: #232A33;
-  --st-sent: #6EA2F5;     --st-sent-bg: #15273D;
-  --st-reply: #38CFC0;    --st-reply-bg: #0C2E2B;
-  --st-deal: #B08BE6;     --st-deal-bg: #231934;
-  --st-won: #E8A33D;      --st-won-bg: #33260F;
+  --warn-soft: #2A1F0C;
+  --danger: #F0736A;
+  --danger-soft: #2C1310;
 
   --lift-1: 0 1px 2px rgba(0, 0, 0, .45);
   --lift-2: 0 6px 16px rgba(0, 0, 0, .5);
@@ -164,7 +224,6 @@ body {
 h1, h2, h3, h4 {
   margin: 0;
   font-family: var(--display);
-  font-variation-settings: 'wdth' 112;
   letter-spacing: -.015em;
   line-height: 1.08;
   text-wrap: balance;
@@ -341,11 +400,6 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.6; }
   border-radius: 1px;
   background: currentColor;
 }
-.st-new   { color: var(--st-new);   background: var(--st-new-bg); }
-.st-sent  { color: var(--st-sent);  background: var(--st-sent-bg); }
-.st-reply { color: var(--st-reply); background: var(--st-reply-bg); }
-.st-deal  { color: var(--st-deal);  background: var(--st-deal-bg); }
-.st-won   { color: var(--st-won);   background: var(--st-won-bg); }
 
 .divider { height: 1px; margin: 0; border: 0; background: var(--rule); }
 
@@ -357,119 +411,32 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.6; }
   border-bottom: 1px solid var(--rule);
   background: var(--panel);
 }
+/* Full bleed, not a centred column: this is application chrome, so the mark
+   goes to the left edge and the controls to the right one. The left padding
+   matches the rail's, which lines the mark up with the nav items below it. */
 .transport-in {
   display: flex;
   align-items: center;
   gap: var(--s5);
-  max-width: 1200px;
   height: var(--transport-h);
-  margin: 0 auto;
-  padding: 0 var(--s5);
+  padding: 0 var(--s4) 0 22px;
 }
 .brand {
   display: flex;
   align-items: center;
   gap: var(--s2);
   font-family: var(--display);
-  font-variation-settings: 'wdth' 88;
   font-size: 16px;
   font-weight: 700;
   letter-spacing: .01em;
   text-decoration: none;
   text-transform: uppercase;
 }
-.brand-mark { width: 22px; height: 22px; flex: none; }
+/* The mark carries detail (an eye inside a letterform), so it needs a couple
+   more pixels than a plain glyph would to stay readable. */
+.brand-mark { width: 25px; height: 26px; flex: none; color: var(--signal); }
 
 .transport-tools { display: flex; align-items: center; gap: var(--s2); }
-
-/* ============================== page frame ============================== */
-.wrap { max-width: 1200px; margin: 0 auto; padding: 0 var(--s5); }
-.sect { padding: var(--s8) 0; }
-.sect-head { max-width: 62ch; margin-bottom: var(--s6); }
-.sect-head h2 {
-  margin: var(--s3) 0;
-  font-size: clamp(25px, 3vw, 34px);
-  font-weight: 700;
-}
-.sect-head p { color: var(--ink-2); font-size: 16px; }
-
-/* ============================== hero ============================== */
-.hero { padding: var(--s8) 0 var(--s7); }
-.hero-copy { max-width: 60ch; }
-.hero h1 {
-  margin-bottom: var(--s4);
-  font-size: clamp(36px, 5.4vw, 62px);
-  font-weight: 800;
-  font-variation-settings: 'wdth' 118;
-  letter-spacing: -.025em;
-}
-.hero h1 em { font-style: normal; color: var(--signal); }
-.hero .lede {
-  max-width: 56ch;
-  margin-bottom: var(--s5);
-  font-size: 17px;
-  color: var(--ink-2);
-}
-.hero-cta { display: flex; flex-wrap: wrap; gap: var(--s3); margin-bottom: var(--s4); }
-.hero-note {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  color: var(--ink-3);
-}
-
-/* The thesis: one real lead row, at full fidelity. */
-.thesis {
-  margin-top: var(--s7);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-lg);
-  background: var(--panel);
-  box-shadow: var(--lift-2);
-  overflow: hidden;
-}
-.thesis-head {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-  padding: 10px var(--s4);
-  border-bottom: 1px solid var(--rule);
-  background: var(--panel-2);
-}
-.thesis-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-  gap: var(--s6);
-  padding: var(--s6);
-  align-items: center;
-}
-.thesis-name {
-  font-family: var(--display);
-  font-variation-settings: 'wdth' 108;
-  font-size: clamp(22px, 2.6vw, 30px);
-  font-weight: 700;
-  margin-bottom: 6px;
-}
-.thesis-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s4);
-  margin-top: var(--s4);
-}
-.thesis-stat .k {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-.thesis-stat .v {
-  font-family: var(--mono);
-  font-size: 19px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  margin-top: 2px;
-}
 
 /* ============================== cadence strip ============================== */
 /* The signature element. Twelve months of real publishing history, ending at
@@ -479,17 +446,23 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.6; }
   align-items: flex-end;
   gap: 2px;
   height: 26px;
+  /* The track is a hard boundary: a bar can never paint over the row above,
+     whatever its computed height turns out to be. */
+  max-height: 26px;
+  overflow: hidden;
 }
 .cadence-bar {
+  flex: none;
   width: 4px;
   min-height: 2px;
+  max-height: 100%;
   border-radius: 1px;
   background: var(--meter-lo);
   transform-origin: bottom;
   transition: background .2s ease;
 }
-.cadence-bar.live { background: var(--signal); }
-.cadence-bar.empty { background: var(--rule-2); }
+.cadence-bar--live { background: var(--signal); }
+.cadence-bar--zero { background: var(--rule-2); }
 
 .cadence-playhead {
   width: 1px;
@@ -499,7 +472,7 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.6; }
   box-shadow: 0 0 6px var(--signal);
 }
 
-.cadence-lg { height: 68px; gap: 4px; }
+.cadence-lg { height: 68px; max-height: 68px; gap: 4px; }
 .cadence-lg .cadence-bar { width: 10px; border-radius: 2px; }
 .cadence-lg .cadence-playhead { margin-left: 4px; width: 2px; }
 
@@ -510,82 +483,6 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.6; }
 .cadence-animate .cadence-bar {
   animation: cadence-draw .42s cubic-bezier(.22, .8, .3, 1) backwards;
 }
-
-/* ============================== what you get ============================== */
-/* A plain list, not a card grid: four short facts read faster than four boxes. */
-.gets {
-  display: grid;
-  gap: 1px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  background: var(--rule);
-  border: 1px solid var(--rule);
-  border-radius: var(--r);
-  overflow: hidden;
-}
-@media (min-width: 760px) { .gets { grid-template-columns: repeat(2, 1fr); } }
-.gets li {
-  display: flex;
-  gap: var(--s3);
-  align-items: flex-start;
-  padding: var(--s4) var(--s5);
-  background: var(--panel);
-}
-.gets svg { flex: none; margin-top: 3px; color: var(--signal); }
-.gets h3 { margin-bottom: 3px; font-size: 15px; font-variation-settings: 'wdth' 100; }
-.gets p { font-size: 13.5px; color: var(--ink-2); }
-
-/* ============================== closing ============================== */
-.closing {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s5);
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--s6);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-lg);
-  background: var(--panel);
-}
-.closing h2 { margin-bottom: 6px; font-size: clamp(22px, 2.6vw, 28px); }
-.closing p { max-width: 46ch; font-size: 14.5px; color: var(--ink-2); }
-
-/* ============================== faq ============================== */
-.faq { max-width: 800px; }
-.faq details { border-bottom: 1px solid var(--rule); }
-.faq summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s4);
-  padding: var(--s4) 0;
-  font-size: 15.5px;
-  font-weight: 600;
-  list-style: none;
-  cursor: pointer;
-}
-.faq summary::-webkit-details-marker { display: none; }
-.faq summary::after {
-  content: "";
-  width: 8px; height: 8px;
-  flex: none;
-  border-right: 1.5px solid var(--ink-3);
-  border-bottom: 1.5px solid var(--ink-3);
-  transform: rotate(45deg);
-  transition: transform .2s ease;
-}
-.faq details[open] summary::after { transform: rotate(-135deg); }
-.faq .ans { max-width: 70ch; padding: 0 0 var(--s4); font-size: 14.5px; color: var(--ink-2); }
-
-footer {
-  margin-top: var(--s8);
-  padding: var(--s6) 0;
-  border-top: 1px solid var(--rule);
-  font-size: 13px;
-  color: var(--ink-3);
-}
-.foot-in { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: center; justify-content: space-between; }
 
 /* ============================== app shell ============================== */
 .app { display: grid; grid-template-columns: 210px minmax(0, 1fr); min-height: calc(100vh - var(--transport-h)); }
@@ -633,7 +530,7 @@ footer {
 
 .main { min-width: 0; padding: var(--s5) var(--s6); }
 .page-head { display: flex; flex-wrap: wrap; gap: var(--s4); align-items: flex-start; margin-bottom: var(--s5); }
-.page-head h2 { font-size: 22px; font-weight: 700; font-variation-settings: 'wdth' 104; }
+.page-head h2 { font-size: 22px; font-weight: 700; }
 .page-head p { margin-top: 4px; font-size: 14px; color: var(--ink-2); }
 .page-head .spacer { display: flex; gap: var(--s2); align-items: center; margin-left: auto; }
 
@@ -652,17 +549,73 @@ footer {
   font-family: var(--display);
   font-size: 14px;
   font-weight: 700;
-  font-variation-settings: 'wdth' 100;
 }
 .grid-2 { display: grid; gap: var(--s4); }
+
+/* The filter row fills the width instead of stacking in two narrow columns
+   next to a mostly empty one. auto-fit means the same markup gives six
+   columns on a wide window and one on a phone, with no breakpoint list. */
+/* Three columns, two rows. auto-fit was tempting but it fitted five and left
+   the sixth filter orphaned on a row of its own; a fixed count keeps the block
+   rectangular and keeps the min/max pair side by side. */
+.filters { display: grid; gap: var(--s4); }
+@media (min-width: 620px)  { .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1040px) { .filters { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* The primary input gets the full width and a gap before the filters, so the
+   eye reads "what to search" before "how to narrow it". */
+.field-lead { margin-bottom: var(--s5); }
 @media (min-width: 900px) { .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* quota */
 .quota { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
 .meter { width: 118px; height: 5px; flex: none; border-radius: 1px; background: var(--panel-3); overflow: hidden; }
 .meter i { display: block; height: 100%; background: var(--meter-hi); transition: width .5s cubic-bezier(.2, .7, .3, 1); }
-.meter.warn i { background: var(--meter-mid); }
-.meter.crit i { background: var(--danger); }
+/* Namespaced modifiers: a bare `.warn` would be reachable by any global rule
+   with that name, which is exactly how the cadence bars once inherited the
+   empty-state panel's padding. */
+.meter--warn i { background: var(--meter-mid); }
+.meter--crit i { background: var(--danger); }
+.meter-full { width: 100%; height: 6px; border-radius: 2px; }
+
+/* ---- credits (API quota) ---- */
+/* Foot of the rail. Units are the app's real currency, but nobody plans a day
+   around "9.698 unidades" — they plan around how many searches that buys, so
+   the translation is the point of the panel, not decoration on top of it. */
+/* Follows the navigation instead of being pinned to the bottom of the rail:
+   credits are read alongside the nav, and pinning them left a dead column of
+   empty space between the two. */
+.rail-status { margin-top: var(--s5); }
+
+.credits {
+  padding: var(--s3) 12px var(--s4);
+  border-top: 1px solid var(--rule);
+}
+.credits-lbl {
+  margin: 0 0 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.credits-n {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink);
+}
+.credits-n small { font-size: 11px; font-weight: 400; color: var(--ink-3); }
+.credits-sub { margin: 8px 0 0; font-size: 12px; color: var(--ink-2); }
+.credits-sub b { font-family: var(--mono); font-weight: 600; color: var(--signal); }
+.credits-out { color: var(--warn); }
+.credits-reset { margin: 2px 0 0; font-size: 11px; color: var(--ink-3); }
+.credits-none { margin: 0 0 9px; font-size: 12px; color: var(--ink-2); }
 
 /* niche chips */
 .chip-input {
@@ -684,7 +637,7 @@ footer {
 /* results table */
 .tbl-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: var(--r); background: var(--panel); }
 .tbl-wrap:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
-table { width: 100%; min-width: 940px; border-collapse: collapse; font-size: 13.5px; }
+table { width: 100%; min-width: 1050px; border-collapse: collapse; font-size: 13.5px; }
 thead th {
   position: sticky;
   top: 0;
@@ -739,10 +692,31 @@ tbody tr:hover { background: var(--panel-2); }
   font-size: 11px;
   font-weight: 600;
 }
+.av-photo { background: var(--panel-2); overflow: hidden; }
+.av-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ch-name { max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .ch-name a { text-decoration: none; }
 .ch-name a:hover { color: var(--signal); text-decoration: underline; }
 .ch-sub { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+
+/* ---- other networks ---- */
+/* Brand colour makes the row scannable, but each mark is a distinct shape and
+   carries a label, so colour is never the only thing distinguishing them. */
+.socials { display: flex; align-items: center; gap: 2px; }
+.social {
+  display: inline-grid;
+  place-items: center;
+  /* WCAG 2.2 Target Size (Minimum) for web: 24x24 CSS px. */
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-xs);
+  line-height: 0;
+  opacity: .85;
+  transition: opacity .15s ease, background .15s ease;
+}
+.social:hover { opacity: 1; background: var(--panel-2); }
+.social:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+.socials-none { color: var(--ink-3); }
 
 .mailcell { font-family: var(--mono); font-size: 12px; }
 .mailcell.none { font-family: var(--body); font-style: italic; color: var(--ink-3); }
@@ -777,9 +751,9 @@ tbody tr:hover { background: var(--panel-2); }
 .trend.flat { color: var(--ink-3); }
 
 /* empty state */
-.empty { padding: var(--s8) var(--s5); text-align: center; color: var(--ink-2); }
+.empty { padding: var(--s6) var(--s5); text-align: center; color: var(--ink-2); }
 .empty svg { margin-bottom: var(--s4); color: var(--ink-3); }
-.empty h3 { margin-bottom: 8px; font-size: 16px; color: var(--ink); font-variation-settings: 'wdth' 100; }
+.empty h3 { margin-bottom: 8px; font-size: 16px; color: var(--ink); }
 .empty p { max-width: 44ch; margin: 0 auto var(--s5); font-size: 14px; }
 
 .banner {
@@ -792,9 +766,7 @@ tbody tr:hover { background: var(--panel-2); }
   font-size: 13.5px;
 }
 .banner svg { flex: none; margin-top: 1px; }
-.banner-info { background: var(--st-sent-bg); color: var(--st-sent); }
 .banner-warn { background: var(--warn-soft); color: var(--warn); }
-.banner-danger { background: var(--danger-soft); color: var(--danger); }
 
 .keyrow { display: flex; gap: var(--s3); align-items: center; padding: 10px 0; border-bottom: 1px solid var(--rule); }
 .keyrow:last-child { border-bottom: none; }
@@ -819,14 +791,20 @@ tbody tr:hover { background: var(--panel-2); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 
 /* ============================== responsive ============================== */
-@media (max-width: 900px) {
-  .thesis-body { grid-template-columns: 1fr; }
-}
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
-  .rail { flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--rule); }
+  .rail { flex-direction: row; align-items: center; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--rule); }
   .rail-lbl { display: none; }
   .rail button { width: auto; white-space: nowrap; }
   .rail button[aria-current="page"] { box-shadow: inset 0 -2px 0 var(--signal); }
   .main { padding: var(--s4); }
+
+  /* A row has no bottom to sit at, so the panel goes to the far side and
+     drops to the one line that still earns its space: the count. */
+  .rail-status { margin: 0 0 0 auto; flex: none; }
+  .credits { padding: 4px 12px; border-top: none; border-left: 1px solid var(--rule); white-space: nowrap; }
+  .credits-lbl, .credits-reset, .credits-n small { display: none; }
+  .credits-n { margin-bottom: 5px; font-size: 15px; }
+  .credits-sub { margin-top: 5px; font-size: 11px; }
+  .meter-full { width: 96px; }
 }

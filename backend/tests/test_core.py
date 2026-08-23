@@ -16,6 +16,7 @@ from app.keyring import (
 )
 from app.schemas import SearchFilters
 from app.scoring import score_channel
+from app.socials import extract_socials, merge_from_videos
 from app.youtube import Channel, extract_email
 
 
@@ -170,3 +171,116 @@ def test_days_since_last_upload_is_none_without_data():
         published_at=None, thumbnail=None, uploads_playlist=None,
     )
     assert channel.days_since_last_upload is None
+
+
+# ------------------------------------------------- why there is no key to use
+def test_no_keys_at_all_says_so():
+    ring = InMemoryKeyring()
+    with pytest.raises(QuotaExhausted, match="Nenhuma chave cadastrada"):
+        ring.acquire(100)
+
+
+def test_a_rejected_key_is_not_reported_as_exhausted_quota():
+    """The fix for a message that sent users away for a day over a typo."""
+    ring = InMemoryKeyring()
+    k = ring.add("A" * 30)
+    ring.disable(k, "invalid")
+    with pytest.raises(QuotaExhausted, match="recusou esta chave"):
+        ring.acquire(100)
+
+
+def test_several_rejected_keys_use_the_plural_message():
+    ring = InMemoryKeyring()
+    for letter in "AB":
+        ring.disable(ring.add(letter * 30), "invalid")
+    with pytest.raises(QuotaExhausted, match="recusou todas as chaves"):
+        ring.acquire(100)
+
+
+def test_spent_quota_still_mentions_the_reset():
+    ring = InMemoryKeyring()
+    k = ring.add("A" * 30)
+    ring.charge(k, DAILY_UNITS_PER_KEY)
+    with pytest.raises(QuotaExhausted, match="meia-noite no Pac"):
+        ring.acquire(100)
+
+
+def test_a_mix_of_rejected_and_spent_keys_names_both():
+    ring = InMemoryKeyring()
+    ring.disable(ring.add("A" * 30), "invalid")
+    ring.charge(ring.add("B" * 30), DAILY_UNITS_PER_KEY)
+    with pytest.raises(QuotaExhausted, match="1 de 2 chaves"):
+        ring.acquire(100)
+
+
+# ------------------------------------------------------------------- socials
+def test_socials_are_read_from_the_description():
+    found = extract_socials(
+        "Meu insta: https://instagram.com/canaldoze\n"
+        "TikTok https://www.tiktok.com/@canaldoze\n"
+        "Entra no Discord: discord.gg/aB3xY9"
+    )
+    assert [s.network for s in found] == ["instagram", "tiktok", "discord"]
+    assert found[0].handle == "canaldoze"
+    assert found[2].url == "https://discord.gg/aB3xY9"
+
+
+def test_a_share_link_is_not_read_as_an_account():
+    """"Compartilhe no X" must not become "this channel has an X account"."""
+    assert extract_socials("Compartilhe: https://twitter.com/intent/tweet?url=x") == []
+
+
+def test_a_post_link_is_not_read_as_a_profile():
+    assert extract_socials("Veja https://instagram.com/p/Cx9k2Lp/") == []
+
+
+def test_the_same_network_is_only_listed_once():
+    found = extract_socials(
+        "instagram.com/canal e tambem instagram.com/canal_backup"
+    )
+    assert len(found) == 1
+    assert found[0].handle == "canal"
+
+
+def test_networks_always_come_back_in_the_same_order():
+    """Rows must read the same way, whatever order the creator wrote them in."""
+    a = extract_socials("x.com/canal instagram.com/canal")
+    b = extract_socials("instagram.com/canal x.com/canal")
+    assert [s.network for s in a] == [s.network for s in b] == ["instagram", "x"]
+
+
+def test_no_description_means_no_invented_networks():
+    assert extract_socials("") == []
+    assert extract_socials("Inscreva-se e ative o sininho!") == []
+
+
+def test_a_link_repeated_across_videos_is_the_creators_own():
+    """Creators paste their links under every upload; sponsors appear once."""
+    videos = [
+        "Me segue: instagram.com/meucanal",
+        "Insta: instagram.com/meucanal | inscreva-se",
+        "Obrigado ao patrocinador instagram.com/lojaparceira",
+    ]
+    found = merge_from_videos([], videos)
+    assert [(s.network, s.handle) for s in found] == [("instagram", "meucanal")]
+
+
+def test_a_one_off_mention_is_not_claimed_as_the_channels():
+    assert merge_from_videos([], ["parceria com tiktok.com/@outrocanal"]) == []
+
+
+def test_the_channel_description_always_wins():
+    """What the creator wrote about the channel beats anything in a video."""
+    from app.socials import Social
+
+    own = [Social(network="instagram", handle="oficial", url="https://instagram.com/oficial")]
+    found = merge_from_videos(own, ["instagram.com/outro"] * 5)
+    assert [s.handle for s in found] == ["oficial"]
+
+
+def test_video_networks_join_the_channel_ones_in_display_order():
+    from app.socials import Social
+
+    own = [Social(network="facebook", handle="fb", url="https://facebook.com/fb")]
+    found = merge_from_videos(own, ["instagram.com/meucanal"] * 3)
+    assert [s.network for s in found] == ["instagram", "facebook"]

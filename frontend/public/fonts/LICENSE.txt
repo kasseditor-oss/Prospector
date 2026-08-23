@@ -1,0 +1,19 @@
+Roboto e Roboto Mono
+Copyright 2011 Google Inc. All Rights Reserved.
+
+Licenciadas sob a Apache License, Version 2.0 ("Licença"). Você não pode usar
+estes arquivos exceto em conformidade com a Licença. Uma cópia da Licença está
+disponível em:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+A menos que exigido por lei ou acordado por escrito, o software distribuído sob
+a Licença é distribuído "COMO ESTÁ", SEM GARANTIAS OU CONDIÇÕES DE QUALQUER
+NATUREZA, expressas ou implícitas. Consulte a Licença para o texto que rege as
+permissões e limitações.
+
+---
+
+Os arquivos .woff2 nesta pasta são subsets (latin e latin-ext) das fontes
+variáveis originais, obtidos via Google Fonts. Redistribuir é permitido pela
+Apache 2.0 desde que este aviso acompanhe os arquivos.

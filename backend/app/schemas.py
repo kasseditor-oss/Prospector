@@ -72,6 +72,14 @@ class ScoreDetail(BaseModel):
     fit: int
 
 
+class SocialOut(BaseModel):
+    """One other network the channel links to from its description."""
+
+    network: str
+    handle: str
+    url: str
+
+
 class ChannelOut(BaseModel):
     id: str
     title: str
@@ -83,6 +91,8 @@ class ChannelOut(BaseModel):
     country: str | None
     thumbnail: str | None
     email: str | None
+    #: Other networks the channel published, in a fixed display order.
+    socials: list[SocialOut]
     uploads_per_month: float
     #: Uploads per month over the trailing window, oldest first. Shorter than
     #: 12 when the channel published enough to exhaust one page of history.
@@ -96,12 +106,30 @@ class ChannelOut(BaseModel):
     score: ScoreDetail
 
 
+class LeadOut(ChannelOut):
+    """A saved lead: a channel plus when it entered and last refreshed."""
+
+    first_seen: datetime
+    last_seen: datetime
+
+
+class LeadsResponse(BaseModel):
+    leads: list[LeadOut]
+    total: int
+
+
 class SearchResponse(BaseModel):
     channels: list[ChannelOut]
     units_spent: int
     units_remaining: int
     examined: int
     filtered_out: int
+    #: How many of these channels were not already in the lead base.
+    saved_new: int = 0
+    #: How many were already there and had their numbers refreshed.
+    saved_updated: int = 0
+    #: Size of the whole base after this search.
+    total_saved: int = 0
 
 
 class EstimateResponse(BaseModel):
@@ -128,3 +156,6 @@ class QuotaOut(BaseModel):
     units_remaining: int
     units_total: int
     quota_day: str
+    #: How keys are kept between launches, in words the user can act on. The
+    #: keys screen states the actual guarantee rather than a generic promise.
+    key_storage: str = "não são salvas (some ao fechar)"

@@ -7,11 +7,13 @@ where anyone can read it out of the network tab.
 
 from __future__ import annotations
 
-import os
+import asyncio
+import sys
+from pathlib import Path
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi import Depends, FastAPI, HTTPException
 
 from .keyring import (
     DAILY_UNITS_PER_KEY,
@@ -28,63 +30,37 @@ from .schemas import (
     QuotaOut,
     ScoreDetail,
     SearchFilters,
+    LeadOut,
+    LeadsResponse,
     SearchResponse,
+    SocialOut,
 )
+from .leads import LeadStore
 from .scoring import score_channel
-from .sessions import SESSION_COOKIE
 from .store import build_store
 from .youtube import Channel, YouTubeClient, YouTubeError
 
 app = FastAPI(title="Prospector API", version="0.1.0")
 
-# In development the frontend sits on another port; in production it sits on
-# another host. Both come from the environment so a deploy never needs a code
-# change — and so a wildcard can never sneak in, which would be unsafe here:
-# credentials are allowed, and the session cookie is what guards each key pool.
-_DEFAULT_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
-ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv("PROSPECTOR_ALLOWED_ORIGINS", _DEFAULT_ORIGINS).split(",")
-    if origin.strip() and origin.strip() != "*"
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type"],
-)
+# The lead base outlives the process on purpose: a search costs quota, so its
+# results belong on disk, not in memory.
+leads = LeadStore()
 
 store = build_store()
 
-# Cookies must be Secure in production; over plain http on localhost a Secure
-# cookie is dropped by the browser, which would silently break development.
-_SECURE_COOKIES = os.getenv("PROSPECTOR_ENV", "development") == "production"
 
+def active_keyring():
+    """The key pool, read once per request and written back once after it.
 
-def session_keyring(request: Request, response: Response):
-    """The key pool belonging to this visitor.
-
-    Reads the pool once here and writes it back once after the response. That
-    ordering is a cost decision as much as a correctness one: a deep search
-    charges quota over 500 times, and persisting each charge separately would
-    burn a day of Firestore's free write budget in under 40 searches.
+    That ordering is a cost decision as much as a correctness one: a deep
+    search charges quota over 500 times, and persisting each charge separately
+    would mean hundreds of disk writes for a single search.
     """
-    session_id, keyring = store.load(request.cookies.get(SESSION_COOKIE))
-    response.set_cookie(
-        SESSION_COOKIE,
-        session_id,
-        max_age=8 * 60 * 60,
-        httponly=True,   # unreadable from JavaScript
-        samesite="lax",
-        secure=_SECURE_COOKIES,
-        path="/",
-    )
+    keyring = store.keyring()
     try:
         yield keyring
     finally:
-        store.save(session_id, keyring)
+        store.flush()
 
 
 def _key_out(state) -> KeyOut:
@@ -105,14 +81,14 @@ async def health() -> dict[str, str]:
 # --------------------------------------------------------------------- keys
 @app.get("/api/keys", response_model=list[KeyOut])
 async def list_keys(
-    keyring: InMemoryKeyring = Depends(session_keyring),
+    keyring: InMemoryKeyring = Depends(active_keyring),
 ) -> list[KeyOut]:
     return [_key_out(k) for k in keyring.all()]
 
 
 @app.post("/api/keys", response_model=KeyOut, status_code=201)
 async def add_key(
-    payload: KeyIn, keyring: InMemoryKeyring = Depends(session_keyring)
+    payload: KeyIn, keyring: InMemoryKeyring = Depends(active_keyring)
 ) -> KeyOut:
     state = keyring.add(payload.key.strip(), payload.label)
     return _key_out(state)
@@ -120,31 +96,40 @@ async def add_key(
 
 @app.delete("/api/keys/{masked_suffix}", status_code=204)
 async def remove_key(
-    masked_suffix: str, keyring: InMemoryKeyring = Depends(session_keyring)
+    masked_suffix: str, keyring: InMemoryKeyring = Depends(active_keyring)
 ) -> None:
     """Delete by the last 4 characters, so the full key never rides in a URL."""
     for state in keyring.all():
         if state.key.endswith(masked_suffix):
             keyring.remove(state.key)
             return
-    raise HTTPException(status_code=404, detail="Key not found.")
+    raise HTTPException(status_code=404, detail="Chave não encontrada.")
+
+
+def _describe_storage() -> str:
+    """What actually happens to a key, so the UI never overpromises."""
+    describe = getattr(store, "describe", None)
+    if describe is None:
+        return "não são salvas (some ao fechar o programa)"
+    return f"salvas neste PC — {describe()}"
 
 
 @app.get("/api/quota", response_model=QuotaOut)
-async def quota(keyring: InMemoryKeyring = Depends(session_keyring)) -> QuotaOut:
+async def quota(keyring: InMemoryKeyring = Depends(active_keyring)) -> QuotaOut:
     keys = keyring.all()
     return QuotaOut(
         keys=len(keys),
         units_remaining=keyring.total_remaining(),
         units_total=len(keys) * DAILY_UNITS_PER_KEY,
         quota_day=current_quota_day(),
+        key_storage=_describe_storage(),
     )
 
 
 # ------------------------------------------------------------------- search
 @app.post("/api/search/estimate", response_model=EstimateResponse)
 async def estimate(
-    filters: SearchFilters, keyring: InMemoryKeyring = Depends(session_keyring)
+    filters: SearchFilters, keyring: InMemoryKeyring = Depends(active_keyring)
 ) -> EstimateResponse:
     """What this search will cost, before committing to it."""
     units = estimate_search_cost(
@@ -182,6 +167,10 @@ def _to_out(channel: Channel, niche: str) -> ChannelOut:
         country=channel.country,
         thumbnail=channel.thumbnail,
         email=channel.email,
+        socials=[
+            SocialOut(network=s.network, handle=s.handle, url=s.url)
+            for s in channel.socials
+        ],
         uploads_per_month=round(channel.uploads_per_month, 2),
         cadence=channel.cadence,
         cadence_trend=round(channel.cadence_trend, 2),
@@ -200,12 +189,15 @@ def _to_out(channel: Channel, niche: str) -> ChannelOut:
 
 @app.post("/api/search", response_model=SearchResponse)
 async def search(
-    filters: SearchFilters, keyring: InMemoryKeyring = Depends(session_keyring)
+    filters: SearchFilters, keyring: InMemoryKeyring = Depends(active_keyring)
 ) -> SearchResponse:
     if not keyring.all():
         raise HTTPException(
             status_code=428,
-            detail="Add a YouTube API key before searching.",
+            detail=(
+                "Nenhuma chave cadastrada. Adicione a sua chave da API do "
+                "YouTube para buscar."
+            ),
         )
 
     client_api = YouTubeClient(keyring)
@@ -253,10 +245,73 @@ async def search(
     out = [_to_out(c, seen.get(c.id, filters.niches[0])) for c in kept]
     out.sort(key=lambda c: c.score.total, reverse=True)
 
+    # Persist before answering. SQLite writes are quick but they are still
+    # blocking file I/O, so they run off the event loop.
+    payload = [c.model_dump() for c in out]
+    new_count, updated = await asyncio.to_thread(leads.save_many, payload)
+    total_saved = await asyncio.to_thread(leads.count)
+
     return SearchResponse(
         channels=out,
         units_spent=client_api.units_spent,
         units_remaining=keyring.total_remaining(),
         examined=examined,
         filtered_out=examined - len(out),
+        saved_new=new_count,
+        saved_updated=updated,
+        total_saved=total_saved,
     )
+
+
+@app.get("/api/leads", response_model=LeadsResponse)
+async def list_leads(
+    q: str = "",
+    sort: str = "first_seen",
+    limit: int = 500,
+    offset: int = 0,
+    with_email: bool = False,
+) -> LeadsResponse:
+    """The accumulated base. Independent of any single search."""
+    rows, total = await asyncio.to_thread(
+        leads.list, query=q, sort=sort, limit=limit, offset=offset, with_email=with_email
+    )
+    return LeadsResponse(leads=[LeadOut(**row) for row in rows], total=total)
+
+
+@app.delete("/api/leads/{channel_id}", status_code=204)
+async def delete_lead(channel_id: str) -> None:
+    removed = await asyncio.to_thread(leads.delete, channel_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Lead não encontrado.")
+
+
+@app.delete("/api/leads", status_code=200)
+async def clear_leads() -> dict[str, int]:
+    """Empty the base. The UI asks for confirmation before calling this."""
+    removed = await asyncio.to_thread(leads.clear)
+    return {"removed": removed}
+
+
+# --------------------------------------------------------------- desktop web
+# In the desktop build there is no Node process: FastAPI serves the exported
+# pages and the API from the same origin. That removes the proxy, CORS and the
+# third-party-cookie problem in one move, because there is only one origin.
+#
+# Mounted last on purpose. Starlette matches routes in registration order, so
+# every /api route above is found before this catch-all sees the request.
+def _frontend_dir() -> Path | None:
+    candidates = [
+        # Packaged by PyInstaller: the export is bundled next to the code.
+        Path(getattr(sys, "_MEIPASS", "")) / "web",
+        # Running from the repo.
+        Path(__file__).resolve().parent.parent.parent / "frontend" / "out",
+    ]
+    for path in candidates:
+        if path.is_dir() and (path / "index.html").is_file():
+            return path
+    return None
+
+
+_WEB = _frontend_dir()
+if _WEB is not None:
+    app.mount("/", StaticFiles(directory=_WEB, html=True), name="web")

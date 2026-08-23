@@ -25,6 +25,8 @@ export type Channel = {
   country: string | null;
   thumbnail: string | null;
   email: string | null;
+  /** Other networks the channel published in its description, fixed order. */
+  socials: { network: string; handle: string; url: string }[];
   uploads_per_month: number;
   /** Uploads per month, oldest first. Shorter than 12 when the channel
    *  published enough to exhaust one page of API history. */
@@ -54,6 +56,12 @@ export type SearchResponse = {
   units_remaining: number;
   examined: number;
   filtered_out: number;
+  /** Channels in this result that were not already in the lead base. */
+  saved_new: number;
+  /** Channels that were already there and had their numbers refreshed. */
+  saved_updated: number;
+  /** Size of the whole base after this search. */
+  total_saved: number;
 };
 
 export type EstimateResponse = {
@@ -75,6 +83,8 @@ export type Quota = {
   units_remaining: number;
   units_total: number;
   quota_day: string;
+  /** What actually happens to a key between launches, in plain words. */
+  key_storage: string;
 };
 
 /** An API error carrying the message the backend wanted the user to read. */
@@ -135,9 +145,39 @@ export const api = {
       method: "POST",
       body: JSON.stringify(filters),
     }),
+  listLeads: (params: LeadQuery = {}) => {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set("q", params.q);
+    if (params.sort) qs.set("sort", params.sort);
+    if (params.withEmail) qs.set("with_email", "true");
+    qs.set("limit", String(params.limit ?? 1000));
+    return request<LeadsResponse>(`/leads?${qs.toString()}`);
+  },
+  removeLead: (id: string) =>
+    request<void>(`/leads/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  clearLeads: () => request<{ removed: number }>("/leads", { method: "DELETE" }),
 };
 
+export type LeadQuery = {
+  q?: string;
+  sort?: string;
+  withEmail?: boolean;
+  limit?: number;
+};
+
+/** A saved channel, plus when it entered the base and last refreshed. */
+export type Lead = Channel & { first_seen: string; last_seen: string };
+
+export type LeadsResponse = { leads: Lead[]; total: number };
+
 /* ----------------------------------------------------------- formatting */
+
+/** Countries the YouTube API accepts a region code for, in Portuguese. */
+export const COUNTRIES: Record<string, string> = {
+  BR: "Brasil", US: "Estados Unidos", PT: "Portugal", MX: "México",
+  AR: "Argentina", ES: "Espanha", FR: "França", DE: "Alemanha",
+  IT: "Itália", GB: "Reino Unido", CA: "Canadá", AU: "Austrália",
+};
 
 export function formatSubscribers(n: number, locale = "pt-BR"): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(".", ",")}M`;
@@ -173,10 +213,15 @@ export function toCsv(channels: Channel[]): string {
     const s = value === null || value === undefined ? "" : String(value);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
+  // Socials flatten into one cell of URLs: a CRM import wants the links, not a
+  // column per network that would be empty on most rows.
   const rows = channels.map((c) =>
-    cols
-      .map((col) => escape(col === "score" ? c.score.total : c[col as keyof Channel]))
-      .join(","),
+    [
+      ...cols.map((col) =>
+        escape(col === "score" ? c.score.total : c[col as keyof Channel]),
+      ),
+      escape((c.socials ?? []).map((s) => s.url).join(" ")),
+    ].join(","),
   );
-  return [cols.join(","), ...rows].join("\n");
+  return [[...cols, "redes"].join(","), ...rows].join("\n");
 }

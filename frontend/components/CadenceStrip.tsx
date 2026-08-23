@@ -38,6 +38,10 @@ export function CadenceStrip({ cadence, trend = 0, size = "sm", animate = false 
     );
   }
 
+  // The bars are sized in real pixels against a known track height. An earlier
+  // version used percentages, which depend on the flex container resolving its
+  // own height first; when that failed the bars painted over the rows above.
+  const track = size === "lg" ? 68 : 26;
   const peak = Math.max(...cadence, 1);
   const total = cadence.reduce((sum, n) => sum + n, 0);
   // The last quarter is the part the reader is judging, so it carries the
@@ -58,13 +62,17 @@ export function CadenceStrip({ cadence, trend = 0, size = "sm", animate = false 
       {cadence.map((count, i) => {
         const offsetFromEnd = cadence.length - 1 - i;
         const isLive = i >= liveFrom;
-        const height = count === 0 ? 2 : Math.max(3, Math.round((count / peak) * 100));
+        const height =
+          count === 0 ? 2 : Math.min(track, Math.max(3, Math.round((count / peak) * track)));
         return (
           <span
             key={offsetFromEnd}
-            className={`cadence-bar${count === 0 ? " empty" : isLive ? " live" : ""}`}
+            // Modifiers are namespaced on purpose: a bare `empty` here once
+            // collided with the `.empty` empty-state panel and every silent
+            // month inherited its padding, blowing the bar up to 48x144.
+            className={`cadence-bar${count === 0 ? " cadence-bar--zero" : isLive ? " cadence-bar--live" : ""}`}
             style={{
-              height: count === 0 ? 2 : `${height}%`,
+              height: `${height}px`,
               animationDelay: animate ? `${i * 34}ms` : undefined,
             }}
             // Native tooltip per bar: the reader can check any single month.

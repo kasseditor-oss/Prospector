@@ -141,14 +141,34 @@ const Moon = ({ size = 18 }: IconProps) => (
  * It says what the product measures, and it is the same shape the reader
  * meets on every lead row.
  */
+/**
+ * The mark: a P whose bowl holds an eye, cut by a diagonal through the stem.
+ *
+ * Drawn as geometry rather than an embedded bitmap, so it stays sharp at any
+ * size, weighs a few hundred bytes, and takes its colour from the theme
+ * instead of baking one in.
+ *
+ * One path, `fill-rule="evenodd"`. Nesting decides what is ink and what is
+ * background: the P fills, the eye and the diagonal are holes cut out of it,
+ * the iris fills again inside the eye, and the highlight is a hole in the
+ * iris. Because the cut-outs are holes and not white shapes, the mark works
+ * on any background — white would only be right on one.
+ */
 const Logo = () => (
-  <svg className="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-    <rect width="32" height="32" rx="6" fill="var(--panel-3)" />
-    <rect x="6" y="19" width="3.5" height="7" rx="1" fill="var(--ink-3)" />
-    <rect x="11.5" y="15" width="3.5" height="11" rx="1" fill="var(--ink-3)" />
-    <rect x="17" y="11" width="3.5" height="15" rx="1" fill="var(--signal)" />
-    <rect x="22.5" y="6" width="3.5" height="20" rx="1" fill="var(--signal)" />
-    <rect x="27.5" y="5" width="1" height="22" rx=".5" fill="var(--signal)" />
+  <svg
+    className="brand-mark"
+    viewBox="0 0 120 125"
+    fill="currentColor"
+    fillRule="evenodd"
+    aria-hidden="true"
+  >
+    <path
+      d="M0 0 L85.8 0 A34.2 41.5 0 0 1 85.8 83 L62.3 83 L62.3 124.8 L25.5 124.8 L25.5 47.2 Z
+         M25.5 42 L25.5 51 L62.3 115 L62.3 106 Z
+         M28.1 45.2 Q69.8 -3 111.5 45.2 Q69.8 93.4 28.1 45.2 Z
+         M46.4 45 a21.9 21.9 0 1 0 43.8 0 a21.9 21.9 0 1 0 -43.8 0 Z
+         M69.5 36.5 a8.5 8.5 0 1 0 17 0 a8.5 8.5 0 1 0 -17 0 Z"
+    />
   </svg>
 );
 

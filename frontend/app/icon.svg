@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 125" fill="#2E7FD0" fill-rule="evenodd">
+  <!--
+    Same geometry as components/Icons.tsx, with a fixed blue: a favicon has no
+    theme to read from, and this mid blue holds up on both a light and a dark
+    browser tab.
+  -->
+  <path d="M0 0 L85.8 0 A34.2 41.5 0 0 1 85.8 83 L62.3 83 L62.3 124.8 L25.5 124.8 L25.5 47.2 Z
+           M25.5 42 L25.5 51 L62.3 115 L62.3 106 Z
+           M28.1 45.2 Q69.8 -3 111.5 45.2 Q69.8 93.4 28.1 45.2 Z
+           M46.4 45 a21.9 21.9 0 1 0 43.8 0 a21.9 21.9 0 1 0 -43.8 0 Z
+           M69.5 36.5 a8.5 8.5 0 1 0 17 0 a8.5 8.5 0 1 0 -17 0 Z"/>
+</svg>

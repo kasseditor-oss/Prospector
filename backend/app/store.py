@@ -1,176 +1,135 @@
-"""Where a visitor's API keys live between requests.
+"""Where the API keys live between runs.
 
 Two implementations behind one interface:
 
-``MemoryKeyStore``     the default. Zero setup, and keys never touch a disk —
-                       but they die with the process and cannot be shared
-                       across instances, which forces a single always-on
-                       container.
+``MemoryKeyStore``  the default when running from source. Keys never touch a
+                    disk, and they die with the process.
 
-``FirestoreKeyStore``  keys encrypted at rest in Firestore. This is what lets
-                       Cloud Run scale to zero and run more than one instance,
-                       which is the difference between a paid always-on service
-                       and one that fits inside the free tier.
+``LocalKeyStore``   keys encrypted at rest on this machine, surviving a
+                    restart. This is what the packaged app uses.
 
-Read-and-write budget matters here. Firestore's free tier allows 20,000 writes
-a day, and a deep search charges quota over 500 times. Writing on every charge
-would exhaust the day's budget in under 40 searches, so a session is read once
-at the start of a request and written once at the end — see
-``session_keyring`` in :mod:`app.main`.
+Both hold a *single* key pool. Prospector is one person on one computer, so
+there is no second visitor to isolate: reopening the window has to look like
+the same user coming back, not like a stranger arriving with an empty pool.
 """
 
 from __future__ import annotations
 
-import base64
-import hashlib
+import json
 import os
-import time
-from typing import Any, Protocol
-
-from cryptography.fernet import Fernet, InvalidToken
+import sys
+import threading
+from pathlib import Path
+from typing import Protocol
 
 from .keyring import InMemoryKeyring, KeyState, current_quota_day
-
-COLLECTION = "prospector_sessions"
-
-# Matches the cookie lifetime in app.main.
-SESSION_TTL_SECONDS = 8 * 60 * 60
-
-
-class MissingSecret(RuntimeError):
-    """Firestore storage was requested without an encryption secret."""
-
-
-def _fernet() -> Fernet:
-    """Encryption key derived from PROSPECTOR_SECRET.
-
-    A user's YouTube key is a credential that bills to their Google account, so
-    it is encrypted before it reaches the database. A database dump alone is
-    then not enough to use anyone's quota.
-    """
-    secret = os.getenv("PROSPECTOR_SECRET", "").strip()
-    if not secret:
-        raise MissingSecret(
-            "Set PROSPECTOR_SECRET to a long random string before enabling "
-            "Firestore storage. Without it, API keys would be stored in clear."
-        )
-    if len(secret) < 32:
-        raise MissingSecret("PROSPECTOR_SECRET must be at least 32 characters.")
-    digest = hashlib.sha256(secret.encode("utf-8")).digest()
-    return Fernet(base64.urlsafe_b64encode(digest))
+from .paths import data_dir
+from .secretbox import SecretBox
 
 
 class KeyStore(Protocol):
-    def load(self, session_id: str | None) -> tuple[str, InMemoryKeyring]:
-        """Return (session_id, keyring). An unknown id yields a fresh session."""
+    def keyring(self) -> InMemoryKeyring:
+        """The key pool. The same object on every call."""
 
-    def save(self, session_id: str, keyring: InMemoryKeyring) -> None:
-        """Persist the keyring's current state. A no-op for memory storage."""
+    def flush(self) -> None:
+        """Write the pool's current state out. A no-op for memory storage."""
 
 
 # --------------------------------------------------------------------- memory
 class MemoryKeyStore:
-    """Process-local storage. Fine for development and single-instance hosts."""
+    """Process-local storage. Used when running from source, and by the tests."""
 
     def __init__(self) -> None:
-        from .sessions import SessionStore
+        self._keyring = InMemoryKeyring()
 
-        self._sessions = SessionStore()
+    def keyring(self) -> InMemoryKeyring:
+        return self._keyring
 
-    def load(self, session_id: str | None) -> tuple[str, InMemoryKeyring]:
-        session = self._sessions.resolve(session_id)
-        return session.id, session.keyring
-
-    def save(self, session_id: str, keyring: InMemoryKeyring) -> None:
+    def flush(self) -> None:
         # The keyring object is already the stored one; nothing to write back.
         return
 
-    def count(self) -> int:
-        return self._sessions.count()
 
+# ---------------------------------------------------------------------- local
+class LocalKeyStore:
+    """Keys saved on this machine, encrypted, surviving restarts.
 
-# ------------------------------------------------------------------ firestore
-class FirestoreKeyStore:
-    """Encrypted key pools in Firestore, one document per session."""
+    Quota counters are saved alongside the keys. Without them a restart would
+    look like a fresh 10,000 units, and the app would promise searches the
+    YouTube API is going to refuse.
+    """
 
-    def __init__(self, client: Any | None = None) -> None:
-        self._fernet = _fernet()
-        if client is not None:
-            self._db = client
-        else:  # pragma: no cover - requires real credentials
-            from google.cloud import firestore
+    FILENAME = "keys.json"
 
-            self._db = firestore.Client()
+    def __init__(self, directory: Path | None = None) -> None:
+        self._dir = Path(directory) if directory else data_dir()
+        self._path = self._dir / self.FILENAME
+        self._box = SecretBox(self._dir)
+        self._lock = threading.Lock()
+        self._keyring = InMemoryKeyring()
+        self._read()
 
-    # -- serialisation ---------------------------------------------------
-    def _encode(self, keyring: InMemoryKeyring) -> list[dict[str, Any]]:
-        return [
+    def describe(self) -> str:
+        return self._box.describe()
+
+    # -- disk ------------------------------------------------------------
+    def _read(self) -> None:
+        try:
+            rows = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(rows, list):
+            return
+        for row in rows:
+            plain = self._box.decrypt(str(row.get("secret") or ""))
+            if not plain:
+                # Unreadable here: written by another account or machine. The
+                # app asks for the key again rather than failing to start.
+                continue
+            self._keyring.adopt(
+                KeyState(
+                    key=plain,
+                    label=row.get("label") or "Chave",
+                    used=int(row.get("used") or 0),
+                    day=row.get("day") or current_quota_day(),
+                    disabled_reason=row.get("disabled_reason"),
+                )
+            )
+
+    def _write(self) -> None:
+        rows = [
             {
                 "label": state.label,
-                "secret": self._fernet.encrypt(state.key.encode("utf-8")).decode(),
+                "secret": self._box.encrypt(state.key),
                 "used": state.used,
                 "day": state.day,
                 "disabled_reason": state.disabled_reason,
             }
-            for state in keyring.all()
+            for state in self._keyring.all()
         ]
-
-    def _decode(self, rows: list[dict[str, Any]]) -> InMemoryKeyring:
-        keyring = InMemoryKeyring()
-        for row in rows:
-            try:
-                plain = self._fernet.decrypt(row["secret"].encode()).decode()
-            except (InvalidToken, KeyError, AttributeError):
-                # A row we cannot read is a row written under a different
-                # secret. Dropping it is better than crashing the request; the
-                # visitor re-adds the key.
-                continue
-            state = KeyState(
-                key=plain,
-                label=row.get("label") or "Chave",
-                used=int(row.get("used") or 0),
-                day=row.get("day") or current_quota_day(),
-                disabled_reason=row.get("disabled_reason"),
-            )
-            keyring.adopt(state)
-        return keyring
+        self._dir.mkdir(parents=True, exist_ok=True)
+        # Write beside the target and rename: a crash mid-write must not leave
+        # a truncated file where the keys used to be.
+        temporary = self._path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(rows, indent=1), encoding="utf-8")
+        os.replace(temporary, self._path)
 
     # -- interface -------------------------------------------------------
-    def load(self, session_id: str | None) -> tuple[str, InMemoryKeyring]:
-        import secrets
+    def keyring(self) -> InMemoryKeyring:
+        return self._keyring
 
-        if session_id:
-            snapshot = self._db.collection(COLLECTION).document(session_id).get()
-            if snapshot.exists:
-                data = snapshot.to_dict() or {}
-                if time.time() - float(data.get("last_seen") or 0) < SESSION_TTL_SECONDS:
-                    return session_id, self._decode(data.get("keys") or [])
-        return secrets.token_urlsafe(32), InMemoryKeyring()
-
-    def save(self, session_id: str, keyring: InMemoryKeyring) -> None:
-        rows = self._encode(keyring)
-        doc = self._db.collection(COLLECTION).document(session_id)
-        if not rows:
-            # Nothing worth a write: an empty session is indistinguishable from
-            # no session, and writes are the scarcest part of the free tier.
-            return
-        doc.set(
-            {
-                "keys": rows,
-                "last_seen": time.time(),
-                # Firestore deletes documents whose TTL field is in the past,
-                # once a TTL policy is configured on `expires_at`.
-                "expires_at": time.time() + SESSION_TTL_SECONDS,
-            }
-        )
+    def flush(self) -> None:
+        with self._lock:
+            self._write()
 
 
 def build_store() -> KeyStore:
     """Pick storage from the environment.
 
-    Defaults to memory so a clone of this repo runs with no setup at all.
+    Memory when running from source, so a clone of this repo starts with no
+    setup at all. Disk in the packaged app, where losing the key on every
+    restart would mean pasting it again every single time.
     """
-    backend = os.getenv("PROSPECTOR_STORE", "memory").strip().lower()
-    if backend == "firestore":
-        return FirestoreKeyStore()
-    return MemoryKeyStore()
+    default = "local" if getattr(sys, "frozen", False) else "memory"
+    backend = os.getenv("PROSPECTOR_STORE", default).strip().lower()
+    return LocalKeyStore() if backend == "local" else MemoryKeyStore()
