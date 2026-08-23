@@ -82,7 +82,7 @@ class InMemoryKeyring:
             for existing in self._keys:
                 if existing.key == key:
                     return existing
-            state = KeyState(key=key, label=label or f"Key {len(self._keys) + 1}")
+            state = KeyState(key=key, label=label or f"Chave {len(self._keys) + 1}")
             self._keys.append(state)
             return state
 

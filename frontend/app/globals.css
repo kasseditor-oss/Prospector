@@ -785,10 +785,46 @@ tbody tr:hover { background: var(--panel-2); }
   background: var(--panel-2);
   color: var(--ink-2);
 }
-.credform { display: grid; gap: var(--s4); align-items: end; }
-@media (min-width: 900px) {
-  .credform { grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1fr) auto; }
+/* One field and its button on one line: adding a credential is a single
+   gesture, and splitting the button onto its own row would imply a step. */
+.paste-row { display: flex; gap: var(--s3); align-items: stretch; }
+.paste-row input { flex: 1; min-width: 0; }
+.paste-row .btn { flex: none; }
+@media (max-width: 560px) {
+  .paste-row { flex-direction: column; align-items: stretch; }
 }
+
+.credpick { margin-top: var(--s4); }
+.credpick p { margin: 0 0 var(--s2); font-size: 13.5px; color: var(--warn); }
+.credpick .srcbar { display: inline-flex; }
+
+.credmore { margin-top: var(--s4); }
+.credmore summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.credmore summary:hover { color: var(--ink); }
+/* display:inline-flex removes the default disclosure marker, which left the
+   word sitting there looking like a caption instead of a control. */
+.credmore summary::-webkit-details-marker { display: none; }
+.credmore summary { list-style: none; }
+.credmore summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  flex: none;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform .15s ease;
+}
+.credmore[open] summary::before { transform: rotate(90deg); }
+.credmore summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 .keyrow:last-child { border-bottom: none; }
 .keyrow .kname { font-size: 14px; font-weight: 600; }
 .keyrow .kval { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }

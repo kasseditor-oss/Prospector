@@ -1325,40 +1325,46 @@ function KeysPanel({
 }) {
   const [value, setValue] = useState("");
   const [extra, setExtra] = useState("");
-  const [kind, setKind] = useState<CredentialKind>("youtube");
-  //: Once the user picks a service by hand, the detector stops overriding it.
-  const [chosen, setChosen] = useState(false);
+  //: Only set when the reader could not tell, or when the user overrules it in
+  //: the options. Null means "whatever the credential says it is".
+  const [manual, setManual] = useState<CredentialKind | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const typed = value.trim();
   const guess = detectKind(value);
-  const mismatch = guess !== null && guess !== kind;
-  const minimum = kind === "apify" ? 10 : 20;
+  const kind = manual ?? guess;
+  const mismatch = manual !== null && guess !== null && manual !== guess;
+  // Waiting for eight characters keeps the "what is this?" prompt from
+  // appearing over the first few letters of a key still being pasted.
+  const unreadable = guess === null && typed.length >= 8;
+  const ready = kind !== null && typed.length >= (kind === "apify" ? 10 : 20);
   const empty = keys.length === 0 && !token?.configured;
 
   function paste(next: string) {
     setValue(next);
-    if (chosen) return;
-    const detected = detectKind(next);
-    if (detected) setKind(detected);
+    // Clearing the field forgets the manual answer too, so the next paste
+    // starts from what it actually is rather than from the last correction.
+    if (next.trim() === "") setManual(null);
   }
 
   async function add() {
+    if (kind === null) return;
     setSaving(true);
     setError(null);
     try {
       if (kind === "apify") {
-        await api.saveXToken(value.trim(), extra.trim() || undefined);
+        await api.saveXToken(typed, extra.trim() || undefined);
         notify("Token do Apify salvo");
         onTokenChange();
       } else {
-        await api.addKey(value.trim(), extra.trim() || undefined);
+        await api.addKey(typed, extra.trim() || undefined);
         notify("Chave adicionada");
         onChange();
       }
       setValue("");
       setExtra("");
-      setChosen(false);
+      setManual(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Não foi possível salvar.");
     } finally {
@@ -1372,8 +1378,8 @@ function KeysPanel({
         <div>
           <h2>Chaves de API</h2>
           <p>
-            {quota?.key_storage ?? "Carregando…"}. Cole a chave do Google ou o
-            token do Apify no mesmo campo — o serviço é reconhecido sozinho.
+            {quota?.key_storage ?? "Carregando…"}. Um campo só: cole a chave do
+            Google ou o token do Apify e o app descobre qual é.
           </p>
         </div>
       </div>
@@ -1493,9 +1499,9 @@ function KeysPanel({
 
         <hr className="divider" style={{ margin: "var(--s5) 0" }} />
 
-        <div className="credform">
-          <div className="field">
-            <label htmlFor="credval">Colar credencial</label>
+        <div className="field">
+          <label htmlFor="credval">Colar credencial</label>
+          <div className="paste-row">
             <input
               id="credval"
               type="text"
@@ -1504,56 +1510,91 @@ function KeysPanel({
               placeholder="AIzaSy…  ou  apify_api_…"
               onChange={(e) => paste(e.target.value)}
             />
-            {/* When the reading disagrees with the choice, say so. Quietly
-                printing "reconhecido como chave do YouTube" next to a service
-                set to Apify would file the key under the wrong one and only
-                surface later, as Apify refusing a token it never received. */}
-            <span className={`hint${mismatch ? " hint-warn" : ""}`}>
-              {value.trim() === ""
-                ? "Serve para as duas: o app lê o começo do código e escolhe o serviço."
-                : mismatch && guess
-                  ? `Isso parece ${KIND_ARTICLE[guess]} ${KIND_NAME[guess]}, mas o serviço ao lado está em ${SERVICE_NAME[kind]}.`
-                  : guess
-                    ? `Reconhecido como ${KIND_NAME[guess]}.`
-                    : "Formato desconhecido — confira o serviço ao lado antes de adicionar."}
-            </span>
-          </div>
-          <div className="field">
-            <label htmlFor="credkind">Serviço</label>
-            <select
-              id="credkind"
-              value={kind}
-              onChange={(e) => {
-                setKind(e.target.value as CredentialKind);
-                setChosen(true);
-              }}
+            <button
+              className="btn btn-primary"
+              onClick={() => void add()}
+              disabled={saving || !ready}
             >
-              <option value="youtube">YouTube — buscar canais</option>
-              <option value="apify">Apify — buscar pedidos no X</option>
-            </select>
+              <Icons.Plus size={16} />
+              <span>{saving ? "Salvando…" : "Adicionar"}</span>
+            </button>
           </div>
-          <div className="field">
-            <label htmlFor="credextra">
-              {kind === "apify" ? "Ator (opcional)" : "Apelido (opcional)"}
-            </label>
-            <input
-              id="credextra"
-              type="text"
-              value={extra}
-              autoComplete="off"
-              placeholder={kind === "apify" ? "deixe vazio para o padrão" : "Projeto principal"}
-              onChange={(e) => setExtra(e.target.value)}
-            />
-          </div>
-          <button
-            className="btn btn-primary"
-            onClick={() => void add()}
-            disabled={saving || value.trim().length < minimum}
-          >
-            <Icons.Plus size={16} />
-            <span>{saving ? "Salvando…" : "Adicionar"}</span>
-          </button>
+          {/* The line under the field is the whole interface for choosing a
+              service: it reports what was read, and only asks when it could
+              not read anything. A mismatch is stated as a warning rather than
+              silently obeyed, because filing a Google key as an Apify token
+              only surfaces later, as Apify refusing something it never got. */}
+          <span className={`hint${mismatch ? " hint-warn" : ""}`}>
+            {typed === ""
+              ? "Serve para as duas: cole e o app descobre de qual serviço é."
+              : mismatch && guess && kind
+                ? `Isso parece ${KIND_ARTICLE[guess]} ${KIND_NAME[guess]}, mas você marcou ${SERVICE_NAME[kind]} nas opções.`
+                : guess
+                  ? `Reconhecido como ${KIND_NAME[guess]}.`
+                  : manual
+                    ? `Vai ser salvo como ${KIND_NAME[manual]}.`
+                    : "Cole o código inteiro — os primeiros caracteres dizem de qual serviço é."}
+          </span>
         </div>
+
+        {/* Asked only when the code says nothing about itself. Two buttons
+            rather than a dropdown: with exactly two answers, picking one is
+            a single click instead of open-scan-choose. */}
+        {unreadable && manual === null ? (
+          <div className="credpick">
+            <p>Não reconheci esse formato. De qual serviço ele é?</p>
+            <div className="srcbar" role="group" aria-label="Serviço da credencial">
+              <button type="button" aria-pressed={false} onClick={() => setManual("youtube")}>
+                <Icons.Tube size={15} />
+                <span>YouTube</span>
+              </button>
+              <button type="button" aria-pressed={false} onClick={() => setManual("apify")}>
+                <Icons.XMark size={13} />
+                <span>Apify</span>
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Everything that is almost never touched, one click away. The actor
+            in particular matters once a year and confuses every other day. */}
+        {kind !== null ? (
+          <details className="credmore">
+            <summary>Opções</summary>
+            <div className="grid-2" style={{ marginTop: "var(--s4)" }}>
+              <div className="field">
+                <label htmlFor="credkind">Serviço</label>
+                <select
+                  id="credkind"
+                  value={kind}
+                  onChange={(e) => setManual(e.target.value as CredentialKind)}
+                >
+                  <option value="youtube">YouTube — buscar canais</option>
+                  <option value="apify">Apify — buscar pedidos no X</option>
+                </select>
+                <span className="hint">Só mexa se o reconhecimento estiver errado.</span>
+              </div>
+              <div className="field">
+                <label htmlFor="credextra">
+                  {kind === "apify" ? "Ator do Apify" : "Apelido da chave"}
+                </label>
+                <input
+                  id="credextra"
+                  type="text"
+                  value={extra}
+                  autoComplete="off"
+                  placeholder={kind === "apify" ? "deixe vazio para o padrão" : "Projeto principal"}
+                  onChange={(e) => setExtra(e.target.value)}
+                />
+                <span className="hint">
+                  {kind === "apify"
+                    ? "Troque só se o ator padrão parar de servir."
+                    : "Serve para diferenciar duas chaves na lista."}
+                </span>
+              </div>
+            </div>
+          </details>
+        ) : null}
         {error ? (
           <p style={{ color: "var(--danger)", fontSize: 13, marginTop: "var(--s3)" }}>{error}</p>
         ) : null}
