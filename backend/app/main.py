@@ -458,6 +458,37 @@ def _frontend_dir() -> Path | None:
     return None
 
 
+class WebFiles(StaticFiles):
+    """The exported pages, with the one header the default is missing.
+
+    StaticFiles sends ETag and Last-Modified but no Cache-Control, and without
+    it Chromium applies *heuristic* freshness: it may serve a stored copy for
+    hours without asking the server whether it changed. In a browser that is a
+    reasonable default. Here it means the user installs an update, opens the
+    app, and is shown the previous interface with no way to tell why — which
+    happened twice while this was being built, both times looking exactly like
+    the new code had failed to ship.
+
+    So the HTML shell always revalidates. That costs one conditional request
+    per launch and the answer is normally a 304 with no body. The files under
+    ``_next/static`` keep the opposite rule: their names contain a hash of
+    their contents, so a name that still exists is by definition unchanged.
+    """
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        # Starlette hands this over already joined for the local filesystem, so
+        # on Windows the separators are backslashes and a "_next/static/" test
+        # silently never matches. Measured, not assumed: the first version of
+        # this check marked every hashed chunk no-cache on Windows and would
+        # have looked correct on the Mac runner.
+        if path.replace("\\", "/").startswith("_next/static/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 _WEB = _frontend_dir()
 if _WEB is not None:
-    app.mount("/", StaticFiles(directory=_WEB, html=True), name="web")
+    app.mount("/", WebFiles(directory=_WEB, html=True), name="web")

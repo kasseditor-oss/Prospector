@@ -140,11 +140,9 @@ export default function Dashboard() {
             <span className="count">{credentials}</span>
           </button>
           <div className="rail-status">
-            {isX ? (
-              <CreditMeter token={token} goKeys={() => setPage("keys")} />
-            ) : (
-              <QuotaMeter quota={quota} goKeys={() => setPage("keys")} />
-            )}
+            {/* A reading, not a call to action: the rail already has one way
+                to the credentials screen, right above this. */}
+            {isX ? <CreditMeter token={token} /> : <QuotaMeter quota={quota} />}
           </div>
         </nav>
 
@@ -235,8 +233,11 @@ function hoursUntilReset(now: Date = new Date()): number {
  * "9.698 unidades" is not a number anyone can act on. The one that matters is
  * how many searches it buys, so that is what the panel leads with; the raw
  * count stays for whoever wants it.
+ *
+ * It reads, it does not act. The rail button directly above already leads to
+ * the credentials screen, and a second door onto the same room is clutter.
  */
-function QuotaMeter({ quota, goKeys }: { quota: Quota | null; goKeys: () => void }) {
+function QuotaMeter({ quota }: { quota: Quota | null }) {
   const total = quota?.units_total ?? 0;
   const left = quota?.units_remaining ?? 0;
 
@@ -245,10 +246,6 @@ function QuotaMeter({ quota, goKeys }: { quota: Quota | null; goKeys: () => void
       <div className="credits">
         <p className="credits-lbl">Créditos de hoje</p>
         <p className="credits-none">Nenhuma chave cadastrada.</p>
-        <button className="btn btn-ghost btn-sm" onClick={goKeys}>
-          <Icons.Plus size={14} />
-          Adicionar chave
-        </button>
       </div>
     );
   }
@@ -300,16 +297,12 @@ const USD_PER_1K = 0.4;
  * useful number is not the balance but what it buys, so the balance is
  * translated into results — the unit the search screen asks for.
  */
-function CreditMeter({ token, goKeys }: { token: ApifyToken | null; goKeys: () => void }) {
+function CreditMeter({ token }: { token: ApifyToken | null }) {
   if (!token?.configured) {
     return (
       <div className="credits">
         <p className="credits-lbl">Crédito do Apify</p>
         <p className="credits-none">Nenhum token cadastrado.</p>
-        <button className="btn btn-ghost btn-sm" onClick={goKeys}>
-          <Icons.Plus size={14} />
-          Adicionar token
-        </button>
       </div>
     );
   }
@@ -1275,8 +1268,51 @@ function PostsPanel({
   );
 }
 
-/* -------------------------------------------------------------------- keys */
+/* ------------------------------------------------------------- credenciais */
 
+/** Which service a credential belongs to. */
+type CredentialKind = "youtube" | "apify";
+
+/**
+ * Which service a pasted string came from.
+ *
+ * Both prefixes are fixed by whoever issues the credential, not by us, so this
+ * is a reading of the value rather than a guess about the user. It is only ever
+ * used to preselect the dropdown, never to override a choice already made — a
+ * wrong guess would file the credential under the wrong service, and the user
+ * has to be able to see and correct it before saving.
+ */
+function detectKind(value: string): CredentialKind | null {
+  const trimmed = value.trim();
+  if (/^apify_api_/i.test(trimmed)) return "apify";
+  if (/^AIza[\w-]/.test(trimmed)) return "youtube";
+  return null;
+}
+
+const KIND_NAME: Record<CredentialKind, string> = {
+  youtube: "chave do YouTube",
+  apify: "token do Apify",
+};
+
+const KIND_ARTICLE: Record<CredentialKind, string> = {
+  youtube: "uma",
+  apify: "um",
+};
+
+const SERVICE_NAME: Record<CredentialKind, string> = {
+  youtube: "YouTube",
+  apify: "Apify",
+};
+
+/**
+ * Every credential the app holds, in one list.
+ *
+ * They are genuinely different things — a YouTube key belongs to a pool with a
+ * daily quota and rotation, the Apify token is one string with a balance that
+ * runs out — but that difference belongs in the row, not in a separate panel
+ * with its own form. Two forms meant two places to paste an API key and no way
+ * to tell which one you needed without knowing the answer already.
+ */
 function KeysPanel({
   keys, quota, token, onChange, onTokenChange, notify,
 }: {
@@ -1288,19 +1324,45 @@ function KeysPanel({
   notify: (m: string) => void;
 }) {
   const [value, setValue] = useState("");
-  const [label, setLabel] = useState("");
+  const [extra, setExtra] = useState("");
+  const [kind, setKind] = useState<CredentialKind>("youtube");
+  //: Once the user picks a service by hand, the detector stops overriding it.
+  const [chosen, setChosen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const guess = detectKind(value);
+  const mismatch = guess !== null && guess !== kind;
+  const minimum = kind === "apify" ? 10 : 20;
+  const empty = keys.length === 0 && !token?.configured;
+
+  function paste(next: string) {
+    setValue(next);
+    if (chosen) return;
+    const detected = detectKind(next);
+    if (detected) setKind(detected);
+  }
+
   async function add() {
+    setSaving(true);
     setError(null);
     try {
-      await api.addKey(value.trim(), label.trim() || undefined);
+      if (kind === "apify") {
+        await api.saveXToken(value.trim(), extra.trim() || undefined);
+        notify("Token do Apify salvo");
+        onTokenChange();
+      } else {
+        await api.addKey(value.trim(), extra.trim() || undefined);
+        notify("Chave adicionada");
+        onChange();
+      }
       setValue("");
-      setLabel("");
-      notify("Chave adicionada");
-      onChange();
+      setExtra("");
+      setChosen(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Não foi possível salvar a chave.");
+      setError(err instanceof ApiError ? err.message : "Não foi possível salvar.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -1310,251 +1372,227 @@ function KeysPanel({
         <div>
           <h2>Chaves de API</h2>
           <p>
-            {quota?.key_storage ?? "Carregando…"}. Cada fonte usa a sua: o
-            YouTube pede uma chave do Google, o X passa pelo Apify.
+            {quota?.key_storage ?? "Carregando…"}. Cole a chave do Google ou o
+            token do Apify no mesmo campo — o serviço é reconhecido sozinho.
           </p>
         </div>
       </div>
 
       <div className="panel">
         <p className="panel-title">
-          <Icons.Tube size={16} />
-          <span>YouTube — suas chaves</span>
+          <Icons.Key size={16} />
+          <span>Suas credenciais</span>
         </p>
-        {keys.length === 0 ? (
+
+        {empty ? (
           <div className="empty" style={{ padding: "var(--s6) 0" }}>
             <Icons.Key size={36} />
-            <h3>Nenhuma chave ainda</h3>
-            <p>Sem chave a busca não consegue consultar o YouTube.</p>
+            <h3>Nenhuma credencial ainda</h3>
+            <p>
+              O YouTube precisa de uma chave do Google; a busca no X precisa de um
+              token do Apify. Dá para usar só uma das duas.
+            </p>
           </div>
         ) : (
-          keys.map((k) => (
-            <div className="keyrow" key={k.masked}>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div className="kname">
-                  {k.label}
-                  {k.disabled_reason ? (
-                    <span className="pill st-new" style={{ marginLeft: 6 }}>
-                      {k.disabled_reason === "quota" ? "sem quota" : "inválida"}
-                    </span>
+          <>
+            {keys.map((k) => (
+              <div className="keyrow" key={k.masked}>
+                <span className="credkind" title="Chave do YouTube">
+                  <Icons.Tube size={15} />
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="kname">
+                    {k.label}
+                    {k.disabled_reason ? (
+                      <span className="pill st-new" style={{ marginLeft: 6 }}>
+                        {k.disabled_reason === "quota" ? "sem quota" : "inválida"}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="kval">{k.masked}</div>
+                </div>
+                <div className="quota">
+                  <span className="num">
+                    {k.remaining.toLocaleString("pt-BR")} un.
+                  </span>
+                  <div className="meter">
+                    <i style={{ width: `${(k.remaining / 10000) * 100}%` }} />
+                  </div>
+                </div>
+                <button
+                  className="btn btn-quiet btn-icon"
+                  aria-label={`Remover ${k.label}`}
+                  onClick={async () => {
+                    await api.removeKey(k.masked.slice(-4));
+                    notify("Chave removida");
+                    onChange();
+                  }}
+                >
+                  <Icons.Trash size={15} />
+                </button>
+              </div>
+            ))}
+
+            {token?.configured ? (
+              <div className="keyrow">
+                <span className="credkind" title="Token do Apify">
+                  <Icons.XMark size={14} />
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="kname">
+                    Apify
+                    {token.error ? (
+                      <span className="pill st-new" style={{ marginLeft: 6 }}>
+                        saldo indisponível
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="kval">{token.masked}</div>
+                </div>
+                <div className="quota">
+                  <span className="num">
+                    {formatUsd(token.remaining_usd)}
+                    {token.total_usd !== null ? (
+                      <span style={{ color: "var(--ink-3)" }}>
+                        {" "}
+                        de {formatUsd(token.total_usd)}
+                      </span>
+                    ) : null}
+                  </span>
+                  {token.remaining_usd !== null && token.total_usd ? (
+                    <div className="meter">
+                      <i
+                        style={{
+                          width: `${Math.max(0, Math.min(100, (token.remaining_usd / token.total_usd) * 100))}%`,
+                        }}
+                      />
+                    </div>
                   ) : null}
                 </div>
-                <div className="kval">{k.masked}</div>
+                <button
+                  className="btn btn-quiet btn-icon"
+                  aria-label="Remover o token do Apify"
+                  onClick={async () => {
+                    await api.removeXToken();
+                    notify("Token removido");
+                    onTokenChange();
+                  }}
+                >
+                  <Icons.Trash size={15} />
+                </button>
               </div>
-              <div className="quota">
-                <div className="meter">
-                  <i style={{ width: `${(k.remaining / 10000) * 100}%` }} />
-                </div>
-              </div>
-              <button
-                className="btn btn-quiet btn-icon"
-                aria-label={`Remover ${k.label}`}
-                onClick={async () => {
-                  await api.removeKey(k.masked.slice(-4));
-                  notify("Chave removida");
-                  onChange();
-                }}
-              >
-                <Icons.Trash size={15} />
-              </button>
-            </div>
-          ))
+            ) : null}
+          </>
         )}
+
+        {token?.error ? (
+          <p style={{ color: "var(--warn)", fontSize: 13, marginTop: "var(--s3)" }}>
+            {token.error}
+          </p>
+        ) : null}
 
         <hr className="divider" style={{ margin: "var(--s5) 0" }} />
 
-        <div className="grid-2" style={{ alignItems: "end" }}>
+        <div className="credform">
           <div className="field">
-            <label htmlFor="keyval">Nova chave</label>
-            <input id="keyval" type="text" value={value} autoComplete="off"
-              placeholder="AIzaSy..." onChange={(e) => setValue(e.target.value)} />
+            <label htmlFor="credval">Colar credencial</label>
+            <input
+              id="credval"
+              type="text"
+              value={value}
+              autoComplete="off"
+              placeholder="AIzaSy…  ou  apify_api_…"
+              onChange={(e) => paste(e.target.value)}
+            />
+            {/* When the reading disagrees with the choice, say so. Quietly
+                printing "reconhecido como chave do YouTube" next to a service
+                set to Apify would file the key under the wrong one and only
+                surface later, as Apify refusing a token it never received. */}
+            <span className={`hint${mismatch ? " hint-warn" : ""}`}>
+              {value.trim() === ""
+                ? "Serve para as duas: o app lê o começo do código e escolhe o serviço."
+                : mismatch && guess
+                  ? `Isso parece ${KIND_ARTICLE[guess]} ${KIND_NAME[guess]}, mas o serviço ao lado está em ${SERVICE_NAME[kind]}.`
+                  : guess
+                    ? `Reconhecido como ${KIND_NAME[guess]}.`
+                    : "Formato desconhecido — confira o serviço ao lado antes de adicionar."}
+            </span>
           </div>
-          <div style={{ display: "flex", gap: "var(--s3)", alignItems: "end" }}>
-            <div className="field" style={{ flex: 1 }}>
-              <label htmlFor="keylabel">Apelido</label>
-              <input id="keylabel" type="text" value={label}
-                placeholder="Projeto principal" onChange={(e) => setLabel(e.target.value)} />
-            </div>
-            <button className="btn btn-primary" onClick={add} disabled={value.trim().length < 20}>
-              <Icons.Plus size={16} />
-              <span>Adicionar</span>
-            </button>
+          <div className="field">
+            <label htmlFor="credkind">Serviço</label>
+            <select
+              id="credkind"
+              value={kind}
+              onChange={(e) => {
+                setKind(e.target.value as CredentialKind);
+                setChosen(true);
+              }}
+            >
+              <option value="youtube">YouTube — buscar canais</option>
+              <option value="apify">Apify — buscar pedidos no X</option>
+            </select>
           </div>
+          <div className="field">
+            <label htmlFor="credextra">
+              {kind === "apify" ? "Ator (opcional)" : "Apelido (opcional)"}
+            </label>
+            <input
+              id="credextra"
+              type="text"
+              value={extra}
+              autoComplete="off"
+              placeholder={kind === "apify" ? "deixe vazio para o padrão" : "Projeto principal"}
+              onChange={(e) => setExtra(e.target.value)}
+            />
+          </div>
+          <button
+            className="btn btn-primary"
+            onClick={() => void add()}
+            disabled={saving || value.trim().length < minimum}
+          >
+            <Icons.Plus size={16} />
+            <span>{saving ? "Salvando…" : "Adicionar"}</span>
+          </button>
         </div>
         {error ? (
           <p style={{ color: "var(--danger)", fontSize: 13, marginTop: "var(--s3)" }}>{error}</p>
         ) : null}
       </div>
 
-      <ApifyPanel token={token} onChange={onTokenChange} notify={notify} />
-
+      {/* The steps follow the service picked above, so the page never explains
+          one credential while the form is waiting for the other. */}
       <div className="panel">
         <p className="panel-title">
           <Icons.Doc size={16} />
-          <span>Como gerar sua chave do YouTube (2 minutos, sem cartão)</span>
+          <span>
+            {kind === "apify"
+              ? "Como pegar o token do Apify (grátis, sem cartão)"
+              : "Como gerar sua chave do YouTube (2 minutos, sem cartão)"}
+          </span>
         </p>
         <ol style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 10, fontSize: 14, color: "var(--ink-2)" }}>
-          <li>Entre no <strong>console.cloud.google.com</strong> com qualquer conta Google e crie um projeto novo.</li>
-          <li>Vá em <strong>APIs e serviços → Biblioteca</strong>, procure por <strong>YouTube Data API v3</strong> e clique em Ativar.</li>
-          <li>Vá em <strong>Credenciais → Criar credenciais → Chave de API</strong> e copie o código gerado.</li>
-          <li>Opcional, mas recomendado: em <strong>Restringir chave</strong>, limite o uso à YouTube Data API v3.</li>
-          <li>Cole aqui. Cada projeto rende 10.000 unidades por dia, e a contagem zera à meia-noite no horário do Pacífico.</li>
+          {kind === "apify" ? (
+            <>
+              <li>Crie uma conta em <strong>apify.com</strong>. O plano grátis dá US$ 5 por mês, sem cartão.</li>
+              <li>Abra <strong>Settings → API &amp; Integrations</strong> e copie o <strong>Personal API token</strong>.</li>
+              <li>Cole acima. Ele fica guardado criptografado nesta máquina, igual à chave do YouTube.</li>
+              <li>
+                O campo <strong>Ator</strong> só importa se o padrão parar de servir: alguns atores
+                limitam contas grátis a 10 resultados por busca, e trocar o nome ali resolve sem
+                mexer no aplicativo.
+              </li>
+            </>
+          ) : (
+            <>
+              <li>Entre no <strong>console.cloud.google.com</strong> com qualquer conta Google e crie um projeto novo.</li>
+              <li>Vá em <strong>APIs e serviços → Biblioteca</strong>, procure por <strong>YouTube Data API v3</strong> e clique em Ativar.</li>
+              <li>Vá em <strong>Credenciais → Criar credenciais → Chave de API</strong> e copie o código gerado.</li>
+              <li>Opcional, mas recomendado: em <strong>Restringir chave</strong>, limite o uso à YouTube Data API v3.</li>
+              <li>Cole acima. Cada projeto rende 10.000 unidades por dia, e a contagem zera à meia-noite no horário do Pacífico.</li>
+            </>
+          )}
         </ol>
       </div>
     </section>
-  );
-}
-
-/**
- * The Apify token, and what is left on it.
- *
- * Kept as its own panel rather than another row in the key list, because it is
- * not another key: there is exactly one, it has no daily quota, no rotation and
- * no reset — it has a balance that runs out. Showing it in the same pool would
- * promise behaviour it does not have.
- */
-function ApifyPanel({
-  token,
-  onChange,
-  notify,
-}: {
-  token: ApifyToken | null;
-  onChange: () => void;
-  notify: (m: string) => void;
-}) {
-  const [value, setValue] = useState("");
-  const [actor, setActor] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      await api.saveXToken(value.trim(), actor.trim() || undefined);
-      setValue("");
-      setActor("");
-      notify("Token do Apify salvo");
-      onChange();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Não foi possível salvar o token.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function forget() {
-    try {
-      await api.removeXToken();
-      notify("Token removido");
-      onChange();
-    } catch {
-      notify("Não foi possível remover o token");
-    }
-  }
-
-  return (
-    <div className="panel">
-      <p className="panel-title">
-        <Icons.XMark size={15} />
-        <span>Token do Apify — busca no X</span>
-      </p>
-
-      {token?.configured ? (
-        <div className="keyrow">
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="kname">
-              Token do Apify
-              {token.error ? (
-                <span className="pill st-new" style={{ marginLeft: 6 }}>
-                  saldo indisponível
-                </span>
-              ) : null}
-            </div>
-            <div className="kval">{token.masked}</div>
-          </div>
-          <div className="quota">
-            <span className="num">
-              {formatUsd(token.remaining_usd)}
-              {token.total_usd !== null ? (
-                <span style={{ color: "var(--ink-3)" }}> de {formatUsd(token.total_usd)}</span>
-              ) : null}
-            </span>
-          </div>
-          <button
-            className="btn btn-quiet btn-icon"
-            aria-label="Remover o token do Apify"
-            onClick={() => void forget()}
-          >
-            <Icons.Trash size={15} />
-          </button>
-        </div>
-      ) : (
-        <div className="empty" style={{ padding: "var(--s6) 0" }}>
-          <Icons.Key size={34} />
-          <h3>Nenhum token ainda</h3>
-          <p>Sem token a busca no X não roda.</p>
-        </div>
-      )}
-
-      {token?.error ? (
-        <p style={{ color: "var(--warn)", fontSize: 13, marginTop: "var(--s3)" }}>
-          {token.error}
-        </p>
-      ) : null}
-
-      <hr className="divider" style={{ margin: "var(--s5) 0" }} />
-
-      <div className="grid-2" style={{ alignItems: "end" }}>
-        <div className="field">
-          <label htmlFor="apifytoken">{token?.configured ? "Trocar o token" : "Novo token"}</label>
-          <input
-            id="apifytoken"
-            type="text"
-            value={value}
-            autoComplete="off"
-            placeholder="apify_api_..."
-            onChange={(e) => setValue(e.target.value)}
-          />
-        </div>
-        <div style={{ display: "flex", gap: "var(--s3)", alignItems: "end" }}>
-          <div className="field" style={{ flex: 1 }}>
-            <label htmlFor="apifyactor">Ator (opcional)</label>
-            <input
-              id="apifyactor"
-              type="text"
-              value={actor}
-              autoComplete="off"
-              placeholder="deixe vazio para o padrão"
-              onChange={(e) => setActor(e.target.value)}
-            />
-          </div>
-          <button
-            className="btn btn-primary"
-            onClick={() => void save()}
-            disabled={saving || value.trim().length < 10}
-          >
-            <Icons.Plus size={16} />
-            <span>{saving ? "Salvando…" : "Salvar"}</span>
-          </button>
-        </div>
-      </div>
-      {error ? (
-        <p style={{ color: "var(--danger)", fontSize: 13, marginTop: "var(--s3)" }}>{error}</p>
-      ) : null}
-
-      <hr className="divider" style={{ margin: "var(--s5) 0" }} />
-
-      <ol style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 10, fontSize: 14, color: "var(--ink-2)" }}>
-        <li>Crie uma conta em <strong>apify.com</strong>. O plano grátis dá US$ 5 por mês, sem cartão.</li>
-        <li>Abra <strong>Settings → API &amp; Integrations</strong> e copie o <strong>Personal API token</strong>.</li>
-        <li>Cole aqui. Ele fica guardado criptografado nesta máquina, igual às chaves do YouTube.</li>
-        <li>
-          O campo <strong>Ator</strong> só importa se o padrão parar de servir: alguns atores
-          limitam contas grátis a 10 resultados por busca, e trocar o nome aqui resolve sem
-          mexer no aplicativo.
-        </li>
-      </ol>
-    </div>
   );
 }
