@@ -159,3 +159,81 @@ class QuotaOut(BaseModel):
     #: How keys are kept between launches, in words the user can act on. The
     #: keys screen states the actual guarantee rather than a generic promise.
     key_storage: str = "não são salvas (some ao fechar)"
+
+
+# ================================================================ X / pedidos
+class TokenIn(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+    #: Which Apify actor to run. Configurable because the most popular one caps
+    #: free accounts at 10 results, and only a run log revealed it.
+    actor: str | None = Field(default=None, max_length=120)
+
+
+class TokenOut(BaseModel):
+    """The Apify token as the screen shows it: present or not, never in full."""
+
+    configured: bool
+    masked: str = ""
+    #: US$ left on the plan this cycle. None when it could not be read.
+    remaining_usd: float | None = None
+    total_usd: float | None = None
+    #: Why the credit is unknown, when it is.
+    error: str | None = None
+
+
+class XSearchFilters(BaseModel):
+    """What to look for on X."""
+
+    #: Empty means the built-in phrase list, which came from a real search.
+    terms: list[str] = Field(default_factory=list, max_length=15)
+    days: int = Field(default=7, ge=1, le=90)
+    max_items: int = Field(default=200, ge=10, le=1000)
+    #: Drops tiny accounts. X search has no follower operator, so this is
+    #: applied after the results come back.
+    min_followers: int = Field(default=0, ge=0, le=1_000_000)
+
+
+class PostOut(BaseModel):
+    id: str
+    source: str
+    author: str
+    author_name: str
+    author_followers: int
+    author_url: str
+    text: str
+    url: str
+    posted_at: str | None
+    replies: int
+    likes: int
+    #: The post names money.
+    budget: bool
+    #: The post reads like recurring work.
+    ongoing: bool
+    #: The phrase that made this a lead, so the reader can judge the judgement.
+    matched: str
+    query: str
+    score: int
+    hours_old: float | None = None
+    #: Absent on a post that is being returned by a search: it has just been
+    #: found, so it has no history in the base yet. Present when read back.
+    first_seen: datetime | None = None
+    last_seen: datetime | None = None
+
+
+class PostsResponse(BaseModel):
+    posts: list[PostOut]
+    total: int
+
+
+class XSearchResponse(BaseModel):
+    posts: list[PostOut]
+    #: Tweets read before filtering.
+    examined: int
+    #: Rejected as editors advertising themselves.
+    competitors: int
+    #: Neither hiring nor offering.
+    unrelated: int
+    saved_new: int = 0
+    saved_updated: int = 0
+    total_saved: int = 0
+    remaining_usd: float | None = None

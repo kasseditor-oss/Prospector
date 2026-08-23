@@ -172,10 +172,39 @@ const Logo = () => (
   </svg>
 );
 
+const Clock = ({ size = 18 }: IconProps) => (
+  <svg {...base(size)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7.5V12l3 1.8" />
+  </svg>
+);
+
+/* Brand marks are filled, not stroked: a logo drawn as an outline stops
+   looking like the logo. They are the same paths the socials column uses. */
+const XMark = ({ size = 18 }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M4 3h4.2l4 5.5L16.9 3H20l-6.3 7.4L20.4 21h-4.2l-4.3-5.9L6.6 21H3.5l6.6-7.8L4 3z" />
+  </svg>
+);
+
+const Tube = ({ size = 18 }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M21.6 7.2a2.6 2.6 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4A2.6 2.6 0 0 0 2.4 7.2 27 27 0 0 0 2 12a27 27 0 0 0 .4 4.8 2.6 2.6 0 0 0 1.8 1.8C5.8 19 12 19 12 19s6.2 0 7.8-.4a2.6 2.6 0 0 0 1.8-1.8A27 27 0 0 0 22 12a27 27 0 0 0-.4-4.8zM10 15.2V8.8l5.4 3.2-5.4 3.2z" />
+  </svg>
+);
+
+const External = ({ size = 18 }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M14 4h6v6M20 4l-8.5 8.5" />
+    <path d="M18 14.5V19a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19V7.5A1.5 1.5 0 0 1 5 6h4.5" />
+  </svg>
+);
+
 const BY_NAME = {
   search: Search, board: Board, key: Key, mail: Mail, copy: Copy, check: Check,
   plus: Plus, download: Download, gauge: Gauge, spark: Spark, globe: Globe,
   shield: Shield, doc: Doc, info: Info, trash: Trash, sun: Sun, moon: Moon,
+  clock: Clock, x: XMark, tube: Tube, external: External,
 } as const;
 
 export type IconName = keyof typeof BY_NAME;
@@ -188,4 +217,5 @@ const ByName = ({ name, size }: IconProps & { name: IconName }) => {
 export const Icons = {
   Search, Board, Key, Mail, Copy, Check, Plus, Download, Gauge, Spark, Globe,
   Shield, Doc, Info, Trash, Sun, Moon, Logo, ByName,
+  Clock, XMark, Tube, External,
 };

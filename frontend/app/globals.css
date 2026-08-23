@@ -158,17 +158,6 @@
     --br-linkedin: #38A0DC;
     --br-kick: #53FC18;
 
-    --br-instagram: #E1306C;
-  --br-tiktok: #25F4EE;
-  --br-x: #9CA9BC;
-  --br-discord: #7C8BF5;
-  --br-twitch: #A970FF;
-  --br-telegram: #3FA3E0;
-  --br-threads: #C0C8D4;
-  --br-facebook: #1877F2;
-  --br-linkedin: #38A0DC;
-  --br-kick: #53FC18;
-
   --lift-1: 0 1px 2px rgba(0, 0, 0, .45);
     --lift-2: 0 6px 16px rgba(0, 0, 0, .5);
     --lift-3: 0 18px 44px rgba(0, 0, 0, .6);
@@ -202,6 +191,17 @@
   --warn-soft: #2A1F0C;
   --danger: #F0736A;
   --danger-soft: #2C1310;
+
+  --br-instagram: #E1306C;
+  --br-tiktok: #25F4EE;
+  --br-x: #9CA9BC;
+  --br-discord: #7C8BF5;
+  --br-twitch: #A970FF;
+  --br-telegram: #3FA3E0;
+  --br-threads: #C0C8D4;
+  --br-facebook: #1877F2;
+  --br-linkedin: #38A0DC;
+  --br-kick: #53FC18;
 
   --lift-1: 0 1px 2px rgba(0, 0, 0, .45);
   --lift-2: 0 6px 16px rgba(0, 0, 0, .5);
@@ -790,6 +790,157 @@ tbody tr:hover { background: var(--panel-2); }
 }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 
+/* ============================== fonte / pedidos ==============================
+   The X source is the same product looking at a different kind of lead, so it
+   borrows the whole language rather than inventing one. Only two things are
+   genuinely new: a switch that says which world you are in, and a timecode,
+   because on a hiring post age is the whole decision. */
+
+/* --- the source switch, in the transport bar --- */
+.srcbar {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
+}
+.srcbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 0 11px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.srcbar button:hover { color: var(--ink); }
+.srcbar button:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+/* Pressed state carries a fill and an underline, never colour alone: this
+   switch decides which base you are looking at, so it has to be unmistakable
+   on a monochrome screen too. */
+.srcbar button[aria-pressed="true"] {
+  background: var(--panel);
+  box-shadow: inset 0 -2px 0 var(--signal), var(--lift-1);
+  color: var(--ink);
+}
+.srcbar svg { flex: none; }
+
+/* --- age, set as a timecode --- */
+.age {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.age::before {
+  content: "";
+  width: 5px; height: 5px;
+  flex: none;
+  border-radius: 1px;
+  background: currentColor;
+}
+.age--now { color: var(--signal); }
+.age--today { color: var(--ink); }
+.age--week { color: var(--ink-2); }
+.age--old { color: var(--ink-3); }
+
+/* --- the request itself --- */
+.pcell {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 46ch;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+/* The phrase that made this a lead. Marking it in place lets a bad rule be
+   caught by eye instead of taken on trust. */
+.pcell mark {
+  padding: 0 2px;
+  border-radius: 2px;
+  background: var(--signal-soft);
+  color: var(--signal);
+  font-weight: 600;
+}
+.psig { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* A checkbox sitting in a .field was picking up the label rule and rendering
+   its own text as a small-caps column heading. It is an option, not a label. */
+.check {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin-top: 24px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.check input {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  accent-color: var(--signal);
+}
+.field .check span {
+  font-family: var(--body);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink);
+}
+
+/* --- pill colours. .st-new was referenced with no definition, so the
+       "sem quota" badge on a key was drawing as bare text. --- */
+.pill-money, .st-new { background: var(--warn-soft); color: var(--warn); }
+.pill-loop { background: var(--signal-soft); color: var(--signal); }
+.pill-mute { background: var(--panel-2); color: var(--ink-3); }
+
+/* --- replies: no replies is the whole point, so it gets the accent --- */
+.replies { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.replies--none { color: var(--signal); font-weight: 600; }
+.replies--many { color: var(--ink-3); }
+
+/* --- what a search read and threw away --- */
+.tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s5);
+  padding: var(--s4);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--panel);
+  margin-bottom: var(--s4);
+}
+.tally div { min-width: 84px; }
+.tally dt {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.tally dd {
+  margin: 3px 0 0;
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tally .keep { color: var(--signal); }
+
 /* ============================== responsive ============================== */
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
@@ -804,7 +955,18 @@ tbody tr:hover { background: var(--panel-2); }
   .rail-status { margin: 0 0 0 auto; flex: none; }
   .credits { padding: 4px 12px; border-top: none; border-left: 1px solid var(--rule); white-space: nowrap; }
   .credits-lbl, .credits-reset, .credits-n small { display: none; }
+  /* With nothing configured the panel is only a prompt, and a prompt has no
+     business taking the meter's slot in a row that already scrolls. The rail
+     button next to it leads to the same screen. */
+  .credits:has(.credits-none) { display: none; }
   .credits-n { margin-bottom: 5px; font-size: 15px; }
   .credits-sub { margin-top: 5px; font-size: 11px; }
   .meter-full { width: 96px; }
+}
+
+/* The transport holds three things; on a narrow window the wordmark is the one
+   that can go, because the source switch beside it cannot. */
+@media (max-width: 640px) {
+  .brand span { display: none; }
+  .srcbar button { padding: 0 9px; font-size: 12px; }
 }

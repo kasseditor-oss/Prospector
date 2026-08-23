@@ -4,24 +4,45 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icons } from "@/components/Icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ChannelTable } from "@/components/ChannelTable";
+import { PostsTable } from "@/components/PostsTable";
 import {
   ApiError,
   COUNTRIES,
   api,
+  formatUsd,
   type ApiKey,
+  type ApifyToken,
   type Channel,
   type Lead,
+  type Post,
   type Quota,
   type SearchFilters,
+  type XSearchFilters,
+  type XSearchResponse,
 } from "@/lib/api";
 
 type Page = "search" | "saved" | "keys";
 
+/**
+ * Which kind of lead the app is looking at.
+ *
+ * Not a filter and not a tab inside a shared list: picking a source changes
+ * what a lead *is*. A YouTube channel and a hiring post on X have almost no
+ * column in common and go stale at completely different speeds, so they never
+ * share a table and never share a base. Making the choice a mode — the rail
+ * relabels, the search screen changes, the credit meter changes currency —
+ * is what keeps that separation impossible to miss.
+ */
+type Source = "youtube" | "x";
+
 export default function Dashboard() {
+  const [source, setSource] = useState<Source>("youtube");
   const [page, setPage] = useState<Page>("search");
   const [savedCount, setSavedCount] = useState(0);
+  const [postCount, setPostCount] = useState(0);
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [quota, setQuota] = useState<Quota | null>(null);
+  const [token, setToken] = useState<ApifyToken | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const notify = useCallback((message: string) => {
@@ -39,15 +60,27 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Read apart from the YouTube keys because it costs a round trip to Apify:
+  // the balance is only worth fetching when the token itself changed.
+  const refreshToken = useCallback(async () => {
+    try {
+      setToken(await api.xToken());
+    } catch {
+      setToken(null);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshKeys();
-    // The rail shows the base size, so it has to be known before the base is
-    // ever opened. limit=1 keeps this to a count, not a full download.
-    api
-      .listLeads({ limit: 1 })
-      .then((data) => setSavedCount(data.total))
-      .catch(() => {});
-  }, [refreshKeys]);
+    void refreshToken();
+    // The rail shows each base's size, so both have to be known before either
+    // is opened. limit=1 keeps these to counts, not full downloads.
+    api.listLeads({ limit: 1 }).then((d) => setSavedCount(d.total)).catch(() => {});
+    api.listPosts({ limit: 1 }).then((d) => setPostCount(d.total)).catch(() => {});
+  }, [refreshKeys, refreshToken]);
+
+  const isX = source === "x";
+  const credentials = keys.length + (token?.configured ? 1 : 0);
 
   return (
     <>
@@ -58,6 +91,18 @@ export default function Dashboard() {
             <Icons.Logo />
             <span>Prospector</span>
           </div>
+          {/* A toggle group, not tabs: it does not switch panes inside a page,
+              it switches which product the whole window is. */}
+          <div className="srcbar" role="group" aria-label="Fonte de prospecção">
+            <button type="button" aria-pressed={!isX} onClick={() => setSource("youtube")}>
+              <Icons.Tube size={15} />
+              <span>Canais do YouTube</span>
+            </button>
+            <button type="button" aria-pressed={isX} onClick={() => setSource("x")}>
+              <Icons.XMark size={13} />
+              <span>Pedidos no X</span>
+            </button>
+          </div>
           <div className="transport-tools" style={{ marginLeft: "auto" }}>
             <ThemeToggle />
           </div>
@@ -66,7 +111,7 @@ export default function Dashboard() {
 
       <div className="app">
         <nav className="rail" aria-label="Seções do app">
-          <p className="rail-lbl">Trabalho</p>
+          <p className="rail-lbl">{isX ? "Pedidos no X" : "Canais do YouTube"}</p>
           <button
             type="button"
             aria-current={page === "search" ? "page" : undefined}
@@ -82,7 +127,7 @@ export default function Dashboard() {
           >
             <Icons.Board size={17} />
             <span>Base</span>
-            <span className="count">{savedCount}</span>
+            <span className="count">{isX ? postCount : savedCount}</span>
           </button>
           <p className="rail-lbl">Configuração</p>
           <button
@@ -92,15 +137,46 @@ export default function Dashboard() {
           >
             <Icons.Key size={17} />
             <span>Chaves de API</span>
-            <span className="count">{keys.length}</span>
+            <span className="count">{credentials}</span>
           </button>
           <div className="rail-status">
-            <QuotaMeter quota={quota} goKeys={() => setPage("keys")} />
+            {isX ? (
+              <CreditMeter token={token} goKeys={() => setPage("keys")} />
+            ) : (
+              <QuotaMeter quota={quota} goKeys={() => setPage("keys")} />
+            )}
           </div>
         </nav>
 
         <div className="main" id="conteudo">
-          {page === "search" ? (
+          {page === "keys" ? (
+            <KeysPanel
+              keys={keys}
+              quota={quota}
+              token={token}
+              onChange={refreshKeys}
+              onTokenChange={refreshToken}
+              notify={notify}
+            />
+          ) : isX ? (
+            page === "search" ? (
+              <XSearchPanel
+                token={token}
+                notify={notify}
+                goKeys={() => setPage("keys")}
+                onSaved={setPostCount}
+                onCredit={(usd) =>
+                  setToken((t) => (t ? { ...t, remaining_usd: usd } : t))
+                }
+              />
+            ) : (
+              <PostsPanel
+                notify={notify}
+                onCountChange={setPostCount}
+                goSearch={() => setPage("search")}
+              />
+            )
+          ) : page === "search" ? (
             <SearchPanel
               keys={keys}
               onSpent={refreshKeys}
@@ -108,14 +184,12 @@ export default function Dashboard() {
               goKeys={() => setPage("keys")}
               onSaved={setSavedCount}
             />
-          ) : page === "saved" ? (
+          ) : (
             <SavedPanel
               notify={notify}
               onCountChange={setSavedCount}
               goSearch={() => setPage("search")}
             />
-          ) : (
-            <KeysPanel keys={keys} quota={quota} onChange={refreshKeys} notify={notify} />
           )}
         </div>
       </div>
@@ -205,6 +279,80 @@ function QuotaMeter({ quota, goKeys }: { quota: Quota | null; goKeys: () => void
         )}
       </p>
       <p className="credits-reset">zera em {hours}h</p>
+    </div>
+  );
+}
+
+/**
+ * What the default actor charges per 1.000 results, in US$.
+ *
+ * Apify bills per result *returned*, not per result asked for, and the price
+ * belongs to the actor rather than to the platform — swapping the actor on the
+ * keys screen changes it. It lives here as a named number so every "custo" on
+ * screen can be checked against the invoice instead of taken on faith.
+ */
+const USD_PER_1K = 0.4;
+
+/**
+ * Apify credit, at the foot of the rail.
+ *
+ * The same job the quota meter does for YouTube, in the other currency. The
+ * useful number is not the balance but what it buys, so the balance is
+ * translated into results — the unit the search screen asks for.
+ */
+function CreditMeter({ token, goKeys }: { token: ApifyToken | null; goKeys: () => void }) {
+  if (!token?.configured) {
+    return (
+      <div className="credits">
+        <p className="credits-lbl">Crédito do Apify</p>
+        <p className="credits-none">Nenhum token cadastrado.</p>
+        <button className="btn btn-ghost btn-sm" onClick={goKeys}>
+          <Icons.Plus size={14} />
+          Adicionar token
+        </button>
+      </div>
+    );
+  }
+
+  const left = token.remaining_usd;
+  const total = token.total_usd;
+
+  // A token that works but whose balance could not be read says so. Drawing an
+  // empty meter here would read as "no credit", which is a different claim.
+  if (left === null || total === null || total <= 0) {
+    return (
+      <div className="credits">
+        <p className="credits-lbl">Crédito do Apify</p>
+        <p className="credits-none">{token.error ?? "Não deu para ler o saldo agora."}</p>
+      </div>
+    );
+  }
+
+  const pct = Math.max(0, Math.min(100, (left / total) * 100));
+  const level = pct < 15 ? " meter--crit" : pct < 40 ? " meter--warn" : "";
+  const results = Math.floor((left / USD_PER_1K) * 1000);
+
+  return (
+    <div className="credits">
+      <p className="credits-lbl">Crédito do Apify</p>
+      <p className="credits-n">
+        {formatUsd(left)}
+        <small>de {formatUsd(total)}</small>
+      </p>
+      {/* Decorative: every number it encodes is written out below it. */}
+      <div className={`meter meter-full${level}`} aria-hidden="true">
+        <i style={{ width: `${pct}%` }} />
+      </div>
+      <p className="credits-sub">
+        {results > 0 ? (
+          <>
+            dá para <b>{results.toLocaleString("pt-BR")}</b> resultados
+          </>
+        ) : (
+          <span className="credits-out">sem crédito para outra busca</span>
+        )}
+      </p>
+      <p className="credits-reset">renova no início do ciclo</p>
     </div>
   );
 }
@@ -597,17 +745,11 @@ function SavedPanel({
             />
           </div>
           <div className="field" style={{ justifyContent: "flex-end" }}>
-            <label
-              style={{
-                display: "flex", gap: 9, alignItems: "center",
-                cursor: "pointer", fontSize: 14, marginTop: 24,
-              }}
-            >
+            <label className="check">
               <input
                 type="checkbox"
                 checked={emailOnly}
                 onChange={(e) => setEmailOnly(e.target.checked)}
-                style={{ width: 16, height: 16, accentColor: "var(--signal)" }}
               />
               <span>Só com e-mail</span>
             </label>
@@ -661,14 +803,488 @@ function SavedPanel({
 }
 
 
+/* --------------------------------------------------------------- X / pedidos */
+
+/** How far back to read. Anything older has been answered. */
+const DAY_OPTIONS = [1, 3, 7, 14, 30, 90];
+
+/** How many tweets to pull. Apify charges per result, so this is the bill. */
+const SIZE_OPTIONS = [50, 100, 200, 500, 1000];
+
+/**
+ * Searching X for people asking to hire an editor.
+ *
+ * The screen owes the reader two things the YouTube search does not. First the
+ * price, because Apify bills per result and the free plan simply stops when the
+ * credit runs out. Second the count of what was thrown away: the classifier
+ * rejects roughly a third of what it reads as editors advertising themselves,
+ * and a filter that silently discards work has to show its arithmetic.
+ */
+function XSearchPanel({
+  token,
+  notify,
+  goKeys,
+  onSaved,
+  onCredit,
+}: {
+  token: ApifyToken | null;
+  notify: (m: string) => void;
+  goKeys: () => void;
+  onSaved: (total: number) => void;
+  onCredit: (usd: number) => void;
+}) {
+  const [terms, setTerms] = useState<string[]>([]);
+  const [draft, setDraft] = useState("");
+  const [days, setDays] = useState(7);
+  const [maxItems, setMaxItems] = useState(200);
+  const [minFollowers, setMinFollowers] = useState(0);
+
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<XSearchResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // The phrase list comes from the backend rather than being repeated here:
+  // it was tuned against real results, and a second copy would drift from it.
+  useEffect(() => {
+    api
+      .xTerms()
+      .then((data) => setTerms(data.terms))
+      .catch(() => {});
+  }, []);
+
+  const cost = (maxItems / 1000) * USD_PER_1K;
+
+  function addTerm() {
+    const value = draft.trim();
+    if (!value || terms.length >= 15 || terms.includes(value)) return;
+    setTerms([...terms, value]);
+    setDraft("");
+  }
+
+  async function run() {
+    if (!token?.configured) {
+      notify("Adicione o token do Apify para buscar no X");
+      goKeys();
+      return;
+    }
+    setRunning(true);
+    setError(null);
+    try {
+      const filters: XSearchFilters = {
+        terms,
+        days,
+        max_items: maxItems,
+        min_followers: minFollowers,
+      };
+      const response = await api.searchX(filters);
+      setResult(response);
+      onSaved(response.total_saved);
+      if (response.remaining_usd !== null) onCredit(response.remaining_usd);
+      const gained =
+        response.saved_new > 0 ? `${response.saved_new} novos na base` : "nenhum pedido novo";
+      notify(`${response.posts.length} pedidos · ${gained}`);
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : "Não foi possível falar com a API.";
+      setError(message);
+      if (err instanceof ApiError && err.status === 428) goKeys();
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <section>
+      <div className="page-head">
+        <div>
+          <h2>Buscar pedidos no X</h2>
+          <p>
+            Procura quem está pedindo um editor agora e descarta quem está se
+            oferecendo como um.
+          </p>
+        </div>
+      </div>
+
+      {!token?.configured ? (
+        <div className="banner banner-warn">
+          <Icons.Info size={17} />
+          <div>
+            <strong>Nenhum token do Apify cadastrado.</strong> A busca no X passa por
+            ele.{" "}
+            <button
+              type="button"
+              className="btn btn-sm btn-quiet"
+              style={{ paddingLeft: 0, textDecoration: "underline" }}
+              onClick={goKeys}
+            >
+              Adicionar token
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="panel">
+        <div className="field field-lead">
+          <label htmlFor="term">Frases procuradas</label>
+          <div className="chip-input" onClick={() => inputRef.current?.focus()}>
+            {terms.map((t, i) => (
+              <span className="chip" key={t}>
+                {t}
+                <button
+                  type="button"
+                  aria-label={`Remover ${t}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTerms(terms.filter((_, index) => index !== i));
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </span>
+            ))}
+            <input
+              id="term"
+              ref={inputRef}
+              type="text"
+              value={draft}
+              disabled={terms.length >= 15}
+              placeholder={terms.length >= 15 ? "máximo de 15 frases" : '"preciso de um editor"'}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addTerm();
+                } else if (e.key === "Backspace" && !draft && terms.length) {
+                  setTerms(terms.slice(0, -1));
+                }
+              }}
+            />
+          </div>
+          <span className="hint">
+            Enter para adicionar. Aspas prendem a frase inteira — sem elas o X
+            procura as palavras soltas e traz muito lixo.
+          </span>
+        </div>
+
+        <div className="filters">
+          <div className="field">
+            <label htmlFor="days">Período</label>
+            <select id="days" value={days} onChange={(e) => setDays(Number(e.target.value))}>
+              {DAY_OPTIONS.map((d) => (
+                <option key={d} value={d}>
+                  {d === 1 ? "Últimas 24 horas" : `Últimos ${d} dias`}
+                </option>
+              ))}
+            </select>
+            <span className="hint">Pedido antigo já foi respondido.</span>
+          </div>
+          <div className="field">
+            <label htmlFor="size">Quantos tweets ler</label>
+            <select id="size" value={maxItems} onChange={(e) => setMaxItems(Number(e.target.value))}>
+              {SIZE_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n.toLocaleString("pt-BR")} tweets
+                </option>
+              ))}
+            </select>
+            <span className="hint">O Apify cobra por resultado devolvido.</span>
+          </div>
+          <div className="field">
+            <label htmlFor="minfol">Seguidores (mín.)</label>
+            <input
+              id="minfol"
+              type="number"
+              min={0}
+              step={100}
+              value={minFollowers}
+              onChange={(e) => setMinFollowers(Number(e.target.value) || 0)}
+            />
+            <span className="hint">Corta contas novas e bots.</span>
+          </div>
+        </div>
+
+        <hr className="divider" style={{ margin: "var(--s5) 0" }} />
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s4)", alignItems: "center" }}>
+          {token?.configured && token.remaining_usd !== null ? (
+            <p style={{ fontSize: 13, color: "var(--ink-2)" }}>
+              Saldo hoje: <b className="num">{formatUsd(token.remaining_usd)}</b>
+            </p>
+          ) : null}
+          <div style={{ marginLeft: "auto", display: "flex", gap: "var(--s4)", alignItems: "center" }}>
+            <div style={{ textAlign: "right" }}>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--ink-3)" }}>
+                Custo máximo
+              </p>
+              <p className="num" style={{ fontSize: 19, fontWeight: 700, color: "var(--signal)" }}>
+                {formatUsd(cost)}
+              </p>
+            </div>
+            <button className="btn btn-primary" onClick={run} disabled={running}>
+              <Icons.XMark size={14} />
+              <span>{running ? "Buscando…" : "Buscar pedidos"}</span>
+            </button>
+          </div>
+        </div>
+        <p style={{ marginTop: "var(--s3)", fontSize: 12, color: "var(--ink-3)" }}>
+          O custo é o teto: a cobrança é por resultado devolvido, a US$&nbsp;
+          {USD_PER_1K.toFixed(2).replace(".", ",")} por mil. Uma busca que acha
+          menos custa menos.
+        </p>
+      </div>
+
+      {error ? (
+        <div className="banner" style={{ background: "var(--danger-soft)", color: "var(--danger)" }}>
+          <Icons.Info size={17} />
+          <div>{error}</div>
+        </div>
+      ) : null}
+
+      {result ? (
+        <dl className="tally">
+          <div>
+            <dt>Tweets lidos</dt>
+            <dd className="num">{result.examined.toLocaleString("pt-BR")}</dd>
+          </div>
+          <div>
+            <dt>Clientes</dt>
+            <dd className="num keep">{result.posts.length.toLocaleString("pt-BR")}</dd>
+          </div>
+          <div>
+            <dt>Concorrentes</dt>
+            <dd className="num">{result.competitors.toLocaleString("pt-BR")}</dd>
+          </div>
+          <div>
+            <dt>Fora do tema</dt>
+            <dd className="num">{result.unrelated.toLocaleString("pt-BR")}</dd>
+          </div>
+          <div>
+            <dt>Novos na base</dt>
+            <dd className="num">{result.saved_new.toLocaleString("pt-BR")}</dd>
+          </div>
+        </dl>
+      ) : null}
+
+      {result && result.posts.length > 0 ? (
+        <PostsTable
+          posts={result.posts}
+          notify={notify}
+          regionLabel="Pedidos encontrados"
+          heading={
+            <>
+              <span className="num">{result.posts.length}</span> pedidos encontrados
+            </>
+          }
+        />
+      ) : result ? (
+        <div className="empty panel">
+          <Icons.Clock size={42} />
+          <h3>Ninguém pediu um editor nesse período</h3>
+          <p>
+            Aumente o período, leia mais tweets ou baixe o mínimo de seguidores.
+            Os {result.competitors} concorrentes que apareceram ficaram de fora
+            de propósito.
+          </p>
+        </div>
+      ) : (
+        <div className="empty panel">
+          <Icons.XMark size={38} />
+          <h3>Nenhuma busca ainda</h3>
+          <p>As frases acima já vêm prontas. Escolha o período e busque.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The base of hiring posts — deliberately not the same screen as the channels.
+ *
+ * A channel found last month is still a lead. A post asking for an editor last
+ * month hired someone weeks ago, so this list is ordered by urgency and the age
+ * column is the one to read first.
+ */
+function PostsPanel({
+  notify,
+  onCountChange,
+  goSearch,
+}: {
+  notify: (m: string) => void;
+  onCountChange: (n: number) => void;
+  goSearch: () => void;
+}) {
+  const [posts, setPosts] = useState<Post[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [query, setQuery] = useState("");
+  const [budgetOnly, setBudgetOnly] = useState(false);
+  const [minFollowers, setMinFollowers] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      // Sorted by urgency at the source, not just in the table: the base can
+      // outgrow one page, and the page you get should be the one worth reading.
+      const data = await api.listPosts({
+        q: query,
+        sort: "score",
+        withBudget: budgetOnly,
+        minFollowers,
+      });
+      setPosts(data.posts);
+      setTotal(data.total);
+      onCountChange(data.total);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Não foi possível ler a base.");
+    }
+  }, [query, budgetOnly, minFollowers, onCountChange]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => void load(), 220);
+    return () => clearTimeout(timer);
+  }, [load]);
+
+  async function remove(post: Post) {
+    try {
+      await api.removePost(post.id);
+      notify(`Pedido de @${post.author} removido`);
+      void load();
+    } catch {
+      notify("Não foi possível remover");
+    }
+  }
+
+  async function clearAll() {
+    if (!window.confirm(`Apagar os ${total} pedidos da base? Isso não tem volta.`)) return;
+    try {
+      const { removed } = await api.clearPosts();
+      notify(`${removed} pedidos apagados`);
+      void load();
+    } catch {
+      notify("Não foi possível apagar a base");
+    }
+  }
+
+  const filtering = query.trim().length > 0 || budgetOnly || minFollowers > 0;
+
+  return (
+    <section>
+      <div className="page-head">
+        <div>
+          <h2>Base de pedidos</h2>
+          <p>
+            Separada da base de canais: um canal continua valendo em um mês, um
+            pedido não.
+          </p>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="banner" style={{ background: "var(--danger-soft)", color: "var(--danger)" }}>
+          <Icons.Info size={17} />
+          <div>{error}</div>
+        </div>
+      ) : null}
+
+      <div className="panel" style={{ padding: "var(--s4)", marginBottom: "var(--s4)" }}>
+        <div className="filters">
+          <div className="field">
+            <label htmlFor="post-q">Filtrar</label>
+            <input
+              id="post-q"
+              type="search"
+              placeholder="texto do pedido ou @perfil"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="post-fol">Seguidores (mín.)</label>
+            <select
+              id="post-fol"
+              value={minFollowers}
+              onChange={(e) => setMinFollowers(Number(e.target.value))}
+            >
+              <option value={0}>Qualquer tamanho</option>
+              <option value={500}>500 ou mais</option>
+              <option value={1000}>1.000 ou mais</option>
+              <option value={5000}>5.000 ou mais</option>
+              <option value={10000}>10.000 ou mais</option>
+            </select>
+          </div>
+          <div className="field" style={{ justifyContent: "flex-end" }}>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={budgetOnly}
+                onChange={(e) => setBudgetOnly(e.target.checked)}
+              />
+              <span>Só quem falou em dinheiro</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {posts === null ? (
+        <div className="empty panel">
+          <Icons.Board size={42} />
+          <h3>Carregando a base…</h3>
+        </div>
+      ) : posts.length > 0 ? (
+        <PostsTable
+          posts={posts}
+          notify={notify}
+          regionLabel="Base de pedidos salvos"
+          heading={
+            <>
+              <span className="num">{posts.length}</span>
+              {filtering || posts.length < total
+                ? ` de ${total} pedidos`
+                : " pedidos salvos"}
+            </>
+          }
+          onDelete={(p) => void remove(p)}
+          actions={
+            <button className="btn btn-ghost btn-sm" onClick={() => void clearAll()}>
+              <Icons.Trash size={15} />
+              Limpar base
+            </button>
+          }
+        />
+      ) : filtering ? (
+        <div className="empty panel">
+          <Icons.Search size={42} />
+          <h3>Nada na base bate com esse filtro</h3>
+          <p>Limpe o filtro para ver os {total} pedidos salvos.</p>
+        </div>
+      ) : (
+        <div className="empty panel">
+          <Icons.Clock size={42} />
+          <h3>A base de pedidos está vazia</h3>
+          <p>Toda busca no X guarda o que encontrar aqui automaticamente.</p>
+          <button className="btn btn-sm" onClick={goSearch}>
+            <Icons.Search size={15} />
+            Fazer a primeira busca
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* -------------------------------------------------------------------- keys */
 
 function KeysPanel({
-  keys, quota, onChange, notify,
+  keys, quota, token, onChange, onTokenChange, notify,
 }: {
   keys: ApiKey[];
   quota: Quota | null;
+  token: ApifyToken | null;
   onChange: () => void;
+  onTokenChange: () => void;
   notify: (m: string) => void;
 }) {
   const [value, setValue] = useState("");
@@ -694,16 +1310,16 @@ function KeysPanel({
         <div>
           <h2>Chaves de API</h2>
           <p>
-            {quota?.key_storage ?? "Carregando…"}. Adicione mais de uma para o
-            rodízio automático.
+            {quota?.key_storage ?? "Carregando…"}. Cada fonte usa a sua: o
+            YouTube pede uma chave do Google, o X passa pelo Apify.
           </p>
         </div>
       </div>
 
       <div className="panel">
         <p className="panel-title">
-          <Icons.Key size={16} />
-          <span>Suas chaves</span>
+          <Icons.Tube size={16} />
+          <span>YouTube — suas chaves</span>
         </p>
         {keys.length === 0 ? (
           <div className="empty" style={{ padding: "var(--s6) 0" }}>
@@ -770,10 +1386,12 @@ function KeysPanel({
         ) : null}
       </div>
 
+      <ApifyPanel token={token} onChange={onTokenChange} notify={notify} />
+
       <div className="panel">
         <p className="panel-title">
           <Icons.Doc size={16} />
-          <span>Como gerar sua chave (2 minutos, sem cartão)</span>
+          <span>Como gerar sua chave do YouTube (2 minutos, sem cartão)</span>
         </p>
         <ol style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 10, fontSize: 14, color: "var(--ink-2)" }}>
           <li>Entre no <strong>console.cloud.google.com</strong> com qualquer conta Google e crie um projeto novo.</li>
@@ -784,5 +1402,159 @@ function KeysPanel({
         </ol>
       </div>
     </section>
+  );
+}
+
+/**
+ * The Apify token, and what is left on it.
+ *
+ * Kept as its own panel rather than another row in the key list, because it is
+ * not another key: there is exactly one, it has no daily quota, no rotation and
+ * no reset — it has a balance that runs out. Showing it in the same pool would
+ * promise behaviour it does not have.
+ */
+function ApifyPanel({
+  token,
+  onChange,
+  notify,
+}: {
+  token: ApifyToken | null;
+  onChange: () => void;
+  notify: (m: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  const [actor, setActor] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      await api.saveXToken(value.trim(), actor.trim() || undefined);
+      setValue("");
+      setActor("");
+      notify("Token do Apify salvo");
+      onChange();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Não foi possível salvar o token.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function forget() {
+    try {
+      await api.removeXToken();
+      notify("Token removido");
+      onChange();
+    } catch {
+      notify("Não foi possível remover o token");
+    }
+  }
+
+  return (
+    <div className="panel">
+      <p className="panel-title">
+        <Icons.XMark size={15} />
+        <span>Token do Apify — busca no X</span>
+      </p>
+
+      {token?.configured ? (
+        <div className="keyrow">
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="kname">
+              Token do Apify
+              {token.error ? (
+                <span className="pill st-new" style={{ marginLeft: 6 }}>
+                  saldo indisponível
+                </span>
+              ) : null}
+            </div>
+            <div className="kval">{token.masked}</div>
+          </div>
+          <div className="quota">
+            <span className="num">
+              {formatUsd(token.remaining_usd)}
+              {token.total_usd !== null ? (
+                <span style={{ color: "var(--ink-3)" }}> de {formatUsd(token.total_usd)}</span>
+              ) : null}
+            </span>
+          </div>
+          <button
+            className="btn btn-quiet btn-icon"
+            aria-label="Remover o token do Apify"
+            onClick={() => void forget()}
+          >
+            <Icons.Trash size={15} />
+          </button>
+        </div>
+      ) : (
+        <div className="empty" style={{ padding: "var(--s6) 0" }}>
+          <Icons.Key size={34} />
+          <h3>Nenhum token ainda</h3>
+          <p>Sem token a busca no X não roda.</p>
+        </div>
+      )}
+
+      {token?.error ? (
+        <p style={{ color: "var(--warn)", fontSize: 13, marginTop: "var(--s3)" }}>
+          {token.error}
+        </p>
+      ) : null}
+
+      <hr className="divider" style={{ margin: "var(--s5) 0" }} />
+
+      <div className="grid-2" style={{ alignItems: "end" }}>
+        <div className="field">
+          <label htmlFor="apifytoken">{token?.configured ? "Trocar o token" : "Novo token"}</label>
+          <input
+            id="apifytoken"
+            type="text"
+            value={value}
+            autoComplete="off"
+            placeholder="apify_api_..."
+            onChange={(e) => setValue(e.target.value)}
+          />
+        </div>
+        <div style={{ display: "flex", gap: "var(--s3)", alignItems: "end" }}>
+          <div className="field" style={{ flex: 1 }}>
+            <label htmlFor="apifyactor">Ator (opcional)</label>
+            <input
+              id="apifyactor"
+              type="text"
+              value={actor}
+              autoComplete="off"
+              placeholder="deixe vazio para o padrão"
+              onChange={(e) => setActor(e.target.value)}
+            />
+          </div>
+          <button
+            className="btn btn-primary"
+            onClick={() => void save()}
+            disabled={saving || value.trim().length < 10}
+          >
+            <Icons.Plus size={16} />
+            <span>{saving ? "Salvando…" : "Salvar"}</span>
+          </button>
+        </div>
+      </div>
+      {error ? (
+        <p style={{ color: "var(--danger)", fontSize: 13, marginTop: "var(--s3)" }}>{error}</p>
+      ) : null}
+
+      <hr className="divider" style={{ margin: "var(--s5) 0" }} />
+
+      <ol style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 10, fontSize: 14, color: "var(--ink-2)" }}>
+        <li>Crie uma conta em <strong>apify.com</strong>. O plano grátis dá US$ 5 por mês, sem cartão.</li>
+        <li>Abra <strong>Settings → API &amp; Integrations</strong> e copie o <strong>Personal API token</strong>.</li>
+        <li>Cole aqui. Ele fica guardado criptografado nesta máquina, igual às chaves do YouTube.</li>
+        <li>
+          O campo <strong>Ator</strong> só importa se o padrão parar de servir: alguns atores
+          limitam contas grátis a 10 resultados por busca, e trocar o nome aqui resolve sem
+          mexer no aplicativo.
+        </li>
+      </ol>
+    </div>
   );
 }

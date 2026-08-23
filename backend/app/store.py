@@ -133,3 +133,71 @@ def build_store() -> KeyStore:
     default = "local" if getattr(sys, "frozen", False) else "memory"
     backend = os.getenv("PROSPECTOR_STORE", default).strip().lower()
     return LocalKeyStore() if backend == "local" else MemoryKeyStore()
+
+
+# --------------------------------------------------------------- named secrets
+class SecretStore:
+    """Single named secrets — today just the Apify token.
+
+    Kept apart from the keyring rather than folded into it: a YouTube key
+    belongs to a pool with quota, rotation and a daily reset, and none of that
+    applies here. One token, which either works or does not. Sharing the
+    keyring's shape would mean pretending it has state it does not have.
+
+    Same vault as the keys, so the guarantee is identical: DPAPI on Windows,
+    Keychain on macOS.
+    """
+
+    FILENAME = "tokens.json"
+
+    def __init__(self, directory: Path | None = None) -> None:
+        self._dir = Path(directory) if directory else data_dir()
+        self._path = self._dir / self.FILENAME
+        self._box = SecretBox(self._dir)
+        self._lock = threading.Lock()
+        self._values: dict[str, str] = {}
+        self._read()
+
+    def describe(self) -> str:
+        return self._box.describe()
+
+    def _read(self) -> None:
+        try:
+            stored = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(stored, dict):
+            return
+        for name, token in stored.items():
+            plain = self._box.decrypt(str(token or ""))
+            if plain:
+                self._values[str(name)] = plain
+
+    def _write(self) -> None:
+        payload = {name: self._box.encrypt(value) for name, value in self._values.items()}
+        self._dir.mkdir(parents=True, exist_ok=True)
+        temporary = self._path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(payload, indent=1), encoding="utf-8")
+        os.replace(temporary, self._path)
+
+    def get(self, name: str) -> str:
+        return self._values.get(name, "")
+
+    def set(self, name: str, value: str) -> None:
+        with self._lock:
+            self._values[name] = value.strip()
+            self._write()
+
+    def remove(self, name: str) -> bool:
+        with self._lock:
+            existed = self._values.pop(name, None) is not None
+            if existed:
+                self._write()
+            return existed
+
+
+def masked(secret: str) -> str:
+    """Enough to recognise it, never enough to use it."""
+    if len(secret) <= 12:
+        return "•" * len(secret)
+    return f"{secret[:9]}{'•' * 12}{secret[-4:]}"

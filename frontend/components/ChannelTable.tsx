@@ -14,6 +14,7 @@ import { Avatar } from "@/components/Avatar";
 import { CadenceStrip, TrendTag } from "@/components/CadenceStrip";
 import { Icons } from "@/components/Icons";
 import { SocialLinks } from "@/components/SocialLinks";
+import { SortableTh } from "@/components/SortableTh";
 import {
   COUNTRIES,
   formatDays,
@@ -106,14 +107,14 @@ export function ChannelTable({
         <table>
           <thead>
             <tr>
-              <Th label="Canal" k="title" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
-              <Th label="Inscritos" k="subscribers" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
-              <Th label="Score" k="score" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <SortableTh label="Canal" k="title" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <SortableTh label="Inscritos" k="subscribers" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <SortableTh label="Score" k="score" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
               <th scope="col">E-mail</th>
               <th scope="col">Redes</th>
               <th scope="col">Cadência · 12m</th>
-              <Th label="Ritmo" k="uploads_per_month" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
-              <Th label="Último vídeo" k="days_since_last_upload" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <SortableTh label="Ritmo" k="uploads_per_month" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <SortableTh label="Último vídeo" k="days_since_last_upload" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
               {onDelete ? (
                 <th scope="col">
                   <span className="sr">Remover</span>
@@ -201,41 +202,5 @@ export function ChannelTable({
         </table>
       </div>
     </>
-  );
-}
-
-function Th({
-  label,
-  k,
-  sortKey,
-  sortDir,
-  onSort,
-}: {
-  label: string;
-  k: SortKey;
-  sortKey: SortKey;
-  sortDir: -1 | 1;
-  onSort: (k: SortKey) => void;
-}) {
-  const active = sortKey === k;
-  const order = active ? (sortDir === -1 ? "decrescente" : "crescente") : "sem ordenação";
-  return (
-    <th
-      scope="col"
-      className="sortable"
-      aria-sort={active ? (sortDir === -1 ? "descending" : "ascending") : undefined}
-    >
-      {/* A real button, not a click handler on the cell: sorting has to be
-          reachable by keyboard and announced as an action. */}
-      <button type="button" className="th-btn" onClick={() => onSort(k)}>
-        {label}
-        <span className="arrow" aria-hidden="true">
-          {active && sortDir === 1 ? "▲" : "▼"}
-        </span>
-        <span className="sr">
-          Ordenar por {label}. Atualmente {order}.
-        </span>
-      </button>
-    </th>
   );
 }

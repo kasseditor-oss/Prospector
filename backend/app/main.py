@@ -32,12 +32,21 @@ from .schemas import (
     SearchFilters,
     LeadOut,
     LeadsResponse,
+    PostOut,
+    PostsResponse,
     SearchResponse,
     SocialOut,
+    TokenIn,
+    TokenOut,
+    XSearchFilters,
+    XSearchResponse,
 )
 from .leads import LeadStore
+from .posts import PostStore, hours_old
 from .scoring import score_channel
-from .store import build_store
+from .xsearch import DEFAULT_TERMS, XClient, XSearchError, account_credit
+from .store import SecretStore, build_store, masked
+from .xsearch import DEFAULT_ACTOR
 from .youtube import Channel, YouTubeClient, YouTubeError
 
 app = FastAPI(title="Prospector API", version="0.1.0")
@@ -45,6 +54,12 @@ app = FastAPI(title="Prospector API", version="0.1.0")
 # The lead base outlives the process on purpose: a search costs quota, so its
 # results belong on disk, not in memory.
 leads = LeadStore()
+
+# The second base, kept apart from the first. See app.posts for why.
+posts = PostStore()
+
+# The Apify token, in the same vault as the YouTube keys.
+secrets = SecretStore()
 
 store = build_store()
 
@@ -289,6 +304,137 @@ async def delete_lead(channel_id: str) -> None:
 async def clear_leads() -> dict[str, int]:
     """Empty the base. The UI asks for confirmation before calling this."""
     removed = await asyncio.to_thread(leads.clear)
+    return {"removed": removed}
+
+
+# ============================================================= X / pedidos
+# A second source with its own base. A channel and a hiring post are not the
+# same kind of lead: one keeps for months, the other is stale in a day. They
+# never share a table, and never share a screen.
+ACTOR_SETTING = "apify_actor"
+TOKEN_SETTING = "apify"
+
+
+def _apify_token() -> str:
+    token = secrets.get(TOKEN_SETTING)
+    if not token:
+        raise HTTPException(
+            status_code=428,
+            detail=(
+                "Nenhum token do Apify cadastrado. Adicione o seu na aba "
+                "Chaves de API para buscar no X."
+            ),
+        )
+    return token
+
+
+@app.get("/api/x/token", response_model=TokenOut)
+async def read_token() -> TokenOut:
+    """Whether a token is set, and what is left of the month's credit."""
+    token = secrets.get(TOKEN_SETTING)
+    if not token:
+        return TokenOut(configured=False)
+    try:
+        credit = await account_credit(token)
+    except XSearchError as error:
+        return TokenOut(configured=True, masked=masked(token), error=str(error))
+    return TokenOut(
+        configured=True,
+        masked=masked(token),
+        remaining_usd=credit["remaining_usd"],
+        total_usd=credit["total_usd"],
+    )
+
+
+@app.post("/api/x/token", response_model=TokenOut, status_code=201)
+async def save_token(payload: TokenIn) -> TokenOut:
+    await asyncio.to_thread(secrets.set, TOKEN_SETTING, payload.token)
+    if payload.actor:
+        await asyncio.to_thread(secrets.set, ACTOR_SETTING, payload.actor)
+    return await read_token()
+
+
+@app.delete("/api/x/token", status_code=204)
+async def forget_token() -> None:
+    await asyncio.to_thread(secrets.remove, TOKEN_SETTING)
+
+
+@app.get("/api/x/terms")
+async def default_terms() -> dict[str, list[str]]:
+    """The built-in phrase list, so the screen can show it rather than say it."""
+    return {"terms": list(DEFAULT_TERMS)}
+
+
+@app.post("/api/x/search", response_model=XSearchResponse)
+async def search_x(filters: XSearchFilters) -> XSearchResponse:
+    """Search X for people asking to hire an editor, and keep what is found."""
+    token = _apify_token()
+    client = XClient(token, actor=secrets.get(ACTOR_SETTING) or DEFAULT_ACTOR)
+    try:
+        found = await client.search(
+            terms=[t for t in filters.terms if t.strip()] or None,
+            days=filters.days,
+            max_items=filters.max_items,
+            min_followers=filters.min_followers,
+        )
+    except XSearchError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    new, updated = await asyncio.to_thread(posts.save_many, found.posts)
+    total = await asyncio.to_thread(posts.count)
+
+    remaining = None
+    try:
+        remaining = (await account_credit(token))["remaining_usd"]
+    except XSearchError:
+        # The search already succeeded; not knowing the balance must not turn
+        # a good result into an error.
+        pass
+
+    return XSearchResponse(
+        posts=[PostOut(**p, hours_old=hours_old(p.get("posted_at"))) for p in found.posts],
+        examined=found.examined,
+        competitors=found.competitors,
+        unrelated=found.unrelated,
+        saved_new=new,
+        saved_updated=updated,
+        total_saved=total,
+        remaining_usd=remaining,
+    )
+
+
+@app.get("/api/posts", response_model=PostsResponse)
+async def list_posts(
+    q: str = "",
+    sort: str = "posted_at",
+    limit: int = 500,
+    offset: int = 0,
+    with_budget: bool = False,
+    min_followers: int = 0,
+) -> PostsResponse:
+    """The saved hiring posts. Separate from the channel base, on purpose."""
+    rows, total = await asyncio.to_thread(
+        posts.list,
+        query=q,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+        with_budget=with_budget,
+        min_followers=min_followers,
+    )
+    return PostsResponse(posts=[PostOut(**row) for row in rows], total=total)
+
+
+@app.delete("/api/posts/{post_id}", status_code=204)
+async def delete_post(post_id: str) -> None:
+    removed = await asyncio.to_thread(posts.delete, post_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+
+
+@app.delete("/api/posts", status_code=200)
+async def clear_posts() -> dict[str, int]:
+    removed = await asyncio.to_thread(posts.clear)
     return {"removed": removed}
 
 
