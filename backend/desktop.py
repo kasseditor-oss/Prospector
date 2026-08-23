@@ -71,6 +71,16 @@ def wait_until_up(url: str, timeout: float = 40.0) -> bool:
     return False
 
 
+def mac_app_roots() -> list[Path]:
+    """Folders macOS keeps applications in.
+
+    A function rather than a constant so a test can replace it: the real
+    /Applications is shared with whatever the machine happens to have
+    installed, and a test that reads it proves nothing about this code.
+    """
+    return [Path("/Applications"), Path.home() / "Applications"]
+
+
 def _find_browser_macos() -> str | None:
     """A Chromium-family browser in /Applications or the user's own folder.
 
@@ -84,8 +94,7 @@ def _find_browser_macos() -> str | None:
         "Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
         "Chromium.app/Contents/MacOS/Chromium",
     ]
-    roots = [Path("/Applications"), Path.home() / "Applications"]
-    for root in roots:
+    for root in mac_app_roots():
         for rel in apps:
             candidate = root / rel
             if candidate.is_file():

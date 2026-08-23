@@ -34,9 +34,19 @@ def test_macos_data_lives_in_application_support(monkeypatch, clean_env):
 
 
 def test_windows_data_lives_in_localappdata(monkeypatch, clean_env):
+    """Asserted as parent + name, never as a literal string.
+
+    On a Mac ``\\`` is an ordinary character, so ``Path(r"C:\\a\\b")`` is a
+    single component and comparing it to a spelled-out Windows path fails for
+    a reason that has nothing to do with this code.
+    """
     monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\ana\AppData\Local")
-    assert paths.user_data_dir() == Path(r"C:\Users\ana\AppData\Local\Prospector")
+    base = r"C:\Users\ana\AppData\Local"
+    monkeypatch.setenv("LOCALAPPDATA", base)
+
+    result = paths.user_data_dir()
+    assert result.name == "Prospector"
+    assert result.parent == Path(base)
 
 
 def test_linux_follows_the_xdg_spec(monkeypatch, clean_env):
@@ -61,30 +71,51 @@ def test_frozen_builds_write_to_the_user_folder_not_beside_the_code(monkeypatch,
 
 
 # ------------------------------------------------------------------ browsers
-def test_macos_finds_a_chromium_in_applications(monkeypatch, tmp_path):
+def _desktop():
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     import desktop
 
-    chrome = tmp_path / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    return desktop
+
+
+def test_macos_finds_a_chromium_in_applications(monkeypatch, tmp_path):
+    """The search roots are replaced, not just $HOME.
+
+    A Mac running this suite has its own /Applications, and a test that reads
+    it would pass on a machine with Chrome and fail on one without — telling
+    you about the machine instead of about this code.
+    """
+    desktop = _desktop()
+    chrome = tmp_path / "Google Chrome.app/Contents/MacOS/Google Chrome"
     chrome.parent.mkdir(parents=True)
     chrome.write_text("#!/bin/sh\n")
 
     monkeypatch.setattr(sys, "platform", "darwin")
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-    monkeypatch.setattr(desktop, "Path", Path)
+    monkeypatch.setattr(desktop, "mac_app_roots", lambda: [tmp_path])
 
     found = desktop._find_browser_macos()
-    assert found is not None and found.endswith("Google Chrome")
+    assert found == str(chrome)
+
+
+def test_macos_prefers_brave_over_chrome(monkeypatch, tmp_path):
+    """Someone who installed Brave chose Brave."""
+    desktop = _desktop()
+    for name in ("Brave Browser", "Google Chrome"):
+        binary = tmp_path / f"{name}.app/Contents/MacOS/{name}"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("#!/bin/sh\n")
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(desktop, "mac_app_roots", lambda: [tmp_path])
+    assert desktop._find_browser_macos().endswith("Brave Browser")
 
 
 def test_macos_reports_no_browser_rather_than_guessing(monkeypatch, tmp_path):
     """Safari has no --app mode, so 'none found' must stay 'none found' and
     let the caller fall back to the default browser."""
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    import desktop
-
+    desktop = _desktop()
     monkeypatch.setattr(sys, "platform", "darwin")
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(desktop, "mac_app_roots", lambda: [tmp_path])
     assert desktop._find_browser_macos() is None
 
 
