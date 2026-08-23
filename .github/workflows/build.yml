@@ -1,0 +1,118 @@
+name: Compilar
+
+# Dois aplicativos, duas máquinas. O PyInstaller empacota o interpretador da
+# máquina que faz o build, então o .exe tem de sair de um Windows e o .dmg de
+# um Mac. O GitHub empresta os dois de graça — é a única razão deste arquivo
+# existir: sem ele seria preciso ter um Mac em casa.
+
+# Só manual, pelo botão "Run workflow" na aba Actions. Compilar a cada push
+# seria cômodo e caro: em repositório privado o minuto de macOS conta 10x
+# contra a cota gratuita, então um build de 10 minutos gasta 100. Aqui nenhum
+# minuto é gasto sem alguém pedir.
+on:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows (.exe)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências do Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pyinstaller
+
+      - name: Rodar os testes
+        working-directory: backend
+        run: python -m pytest tests -q
+
+      - name: Exportar a interface
+        working-directory: frontend
+        env:
+          PROSPECTOR_DESKTOP: "1"
+        run: |
+          npm ci
+          npx next build
+
+      - name: Empacotar o aplicativo
+        working-directory: backend
+        run: python -m PyInstaller packaging/Prospector.spec --noconfirm --clean
+
+      - name: Montar o instalador de arquivo único
+        working-directory: backend
+        run: python -m PyInstaller packaging/ProspectorSetup.spec --noconfirm --clean
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Prospector-Windows
+          path: backend/dist/ProspectorSetup.exe
+          if-no-files-found: error
+
+  macos:
+    name: macOS (.dmg)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências do Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pyinstaller
+
+      - name: Rodar os testes
+        working-directory: backend
+        run: python -m pytest tests -q
+
+      - name: Exportar a interface
+        working-directory: frontend
+        env:
+          PROSPECTOR_DESKTOP: "1"
+        run: |
+          npm ci
+          npx next build
+
+      - name: Empacotar o aplicativo
+        working-directory: backend
+        run: python -m PyInstaller packaging/Prospector-mac.spec --noconfirm --clean
+
+      - name: Assinar localmente (ad-hoc)
+        # Sem certificado pago não há como remover o aviso do Gatekeeper, mas
+        # em Apple Silicon um binário sem assinatura nenhuma nem executa.
+        run: codesign --force --deep --sign - backend/dist/Prospector.app
+
+      - name: Montar o .dmg
+        run: |
+          STAGE="$(mktemp -d)"
+          cp -R backend/dist/Prospector.app "$STAGE/"
+          ln -s /Applications "$STAGE/Aplicativos"
+          hdiutil create -volname "Prospector" -srcfolder "$STAGE" \
+            -ov -format UDZO backend/dist/Prospector.dmg
+          rm -rf "$STAGE"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Prospector-macOS
+          path: backend/dist/Prospector.dmg
+          if-no-files-found: error
