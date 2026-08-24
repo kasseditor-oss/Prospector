@@ -43,6 +43,7 @@ from .schemas import (
     XSearchResponse,
 )
 from .leads import LeadStore
+from .localonly import LocalOnly
 from .posts import PostStore, hours_old
 from .scoring import score_channel
 from .status import STATUSES, is_valid
@@ -52,6 +53,11 @@ from .xsearch import DEFAULT_ACTOR
 from .youtube import Channel, YouTubeClient, YouTubeError
 
 app = FastAPI(title="Prospector API", version="0.1.0")
+
+# Answer only to this machine's own name. The port is local, but a web page
+# can still make the browser aim at it under a borrowed hostname — see
+# app.localonly for the attack this turns away.
+app.add_middleware(LocalOnly)
 
 # The lead base outlives the process on purpose: a search costs quota, so its
 # results belong on disk, not in memory.
