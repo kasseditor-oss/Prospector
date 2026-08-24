@@ -662,6 +662,9 @@ function SavedPanel({
   goSearch: () => void;
 }) {
   const [leads, setLeads] = useState<Lead[] | null>(null);
+  //: How many the whole base holds, which is not the same number as how many
+  //: the current filter matches. The rail badge and the "de N" both mean this
+  //: one: a filter narrows the view, it does not shrink the base.
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState("");
   const [emailOnly, setEmailOnly] = useState(false);
@@ -670,10 +673,15 @@ function SavedPanel({
   const load = useCallback(async () => {
     setError(null);
     try {
-      const data = await api.listLeads({ q: query, withEmail: emailOnly });
+      // Two reads rather than one: the filtered page, and a bare count of the
+      // base. Both are local SQLite, and the second is a COUNT with limit=1.
+      const [data, all] = await Promise.all([
+        api.listLeads({ q: query, withEmail: emailOnly }),
+        api.listLeads({ limit: 1 }),
+      ]);
       setLeads(data.leads);
-      setTotal(data.total);
-      onCountChange(data.total);
+      setTotal(all.total);
+      onCountChange(all.total);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Não foi possível ler a base.");
     }
@@ -1110,6 +1118,7 @@ function PostsPanel({
   goSearch: () => void;
 }) {
   const [posts, setPosts] = useState<Post[] | null>(null);
+  //: The whole base, not the filtered slice. See the channels base for why.
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState("");
   const [budgetOnly, setBudgetOnly] = useState(false);
@@ -1121,15 +1130,13 @@ function PostsPanel({
     try {
       // Sorted by urgency at the source, not just in the table: the base can
       // outgrow one page, and the page you get should be the one worth reading.
-      const data = await api.listPosts({
-        q: query,
-        sort: "score",
-        withBudget: budgetOnly,
-        minFollowers,
-      });
+      const [data, all] = await Promise.all([
+        api.listPosts({ q: query, sort: "score", withBudget: budgetOnly, minFollowers }),
+        api.listPosts({ limit: 1 }),
+      ]);
       setPosts(data.posts);
-      setTotal(data.total);
-      onCountChange(data.total);
+      setTotal(all.total);
+      onCountChange(all.total);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Não foi possível ler a base.");
     }
