@@ -283,12 +283,13 @@ function QuotaMeter({ quota }: { quota: Quota | null }) {
 /**
  * What the default actor charges per 1.000 results, in US$.
  *
- * Apify bills per result *returned*, not per result asked for, and the price
- * belongs to the actor rather than to the platform — swapping the actor on the
- * keys screen changes it. It lives here as a named number so every "custo" on
- * screen can be checked against the invoice instead of taken on faith.
+ * Measured, not quoted: a run capped at 20 results moved the balance by exactly
+ * US$ 0,0050. The listing price of the actor this replaced was US$ 0,40, and
+ * carrying that number over would have overstated every cost on screen by more
+ * than half. The price belongs to the actor rather than to the platform, so
+ * swapping the actor on the credentials screen changes it.
  */
-const USD_PER_1K = 0.4;
+const USD_PER_1K = 0.25;
 
 /**
  * Apify credit, at the foot of the rail.
@@ -1031,9 +1032,9 @@ function XSearchPanel({
           </div>
         </div>
         <p style={{ marginTop: "var(--s3)", fontSize: 12, color: "var(--ink-3)" }}>
-          O custo é o teto: a cobrança é por resultado devolvido, a US$&nbsp;
-          {USD_PER_1K.toFixed(2).replace(".", ",")} por mil. Uma busca que acha
-          menos custa menos.
+          O custo é teto de verdade: o Apify para de cobrar no número acima, a
+          US$&nbsp;{USD_PER_1K.toFixed(2).replace(".", ",")} por mil resultados.
+          Uma busca que acha menos custa menos.
         </p>
       </div>
 

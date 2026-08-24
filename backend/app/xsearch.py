@@ -118,14 +118,23 @@ class XClient:
         min_followers: int = 0,
     ) -> XSearchResult:
         since = datetime.now(timezone.utc) - timedelta(days=max(1, days))
+        cap = max(1, min(max_items, 1000))
         payload = {
             "searchTerms": terms or DEFAULT_TERMS,
-            "maxItems": max(1, min(max_items, 1000)),
+            "maxItems": cap,
             "queryType": "Latest",
             "since_time": since.strftime("%Y-%m-%d_%H:%M:%S_UTC"),
         }
 
-        url = f"{APIFY}/acts/{self._actor}/run-sync-get-dataset-items"
+        # The cap goes on the URL, not only in the body. "maxItems" inside the
+        # input is a suggestion the actor is free to ignore, and this one does:
+        # asking for 50 returned 422 and charged for all of them. As a run
+        # option Apify enforces it itself and stops charging past it, which is
+        # the only version of this number the cost on screen can be based on.
+        url = (
+            f"{APIFY}/acts/{self._actor}/run-sync-get-dataset-items"
+            f"?maxItems={cap}"
+        )
         try:
             async with httpx.AsyncClient(timeout=600) as client:
                 response = await client.post(
