@@ -22,7 +22,7 @@ if exist "backend\dist\Prospector\Prospector.exe" (
 echo.
 echo  O Prospector ainda nao foi compilado.
 echo.
-echo    1. Rode compilar.bat            (compila o aplicativo)
-echo    2. Rode installer\Instalar.bat  (cria o atalho no Menu Iniciar)
+echo    1. Rode compilar.bat  (compila tudo)
+echo    2. Abra backend\dist\ProspectorSetup.exe  (instala)
 echo.
 pause

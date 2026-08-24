@@ -14,7 +14,7 @@ from pathlib import Path
 HERE = Path(SPECPATH).resolve()          # backend/packaging
 BACKEND = HERE.parent                    # backend
 APP = BACKEND / "dist" / "Prospector"
-UNINSTALL = BACKEND.parent / "installer" / "uninstall.ps1"
+UNINSTALL = HERE / "uninstall.ps1"
 
 if not (APP / "Prospector.exe").is_file():
     raise SystemExit(
