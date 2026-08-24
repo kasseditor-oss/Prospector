@@ -117,6 +117,8 @@ export type Post = {
   author_name: string;
   author_followers: number;
   author_url: string;
+  /** The author's picture on X. Null for a post saved before this was kept. */
+  author_avatar: string | null;
   text: string;
   url: string;
   posted_at: string | null;

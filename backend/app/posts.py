@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS posts (
     author_name       TEXT NOT NULL DEFAULT '',
     author_followers  INTEGER NOT NULL DEFAULT 0,
     author_url        TEXT NOT NULL DEFAULT '',
+    author_avatar     TEXT,
     text              TEXT NOT NULL,
     url               TEXT NOT NULL,
     posted_at         TEXT,
@@ -60,6 +61,9 @@ CREATE INDEX IF NOT EXISTS posts_by_score  ON posts (score DESC);
 # reset a post already marked as answered.
 _REFRESHED = (
     "source", "author", "author_name", "author_followers", "author_url",
+    # The picture *is* refreshed, unlike the status: people change it, and an
+    # old one is simply wrong rather than being anybody's note.
+    "author_avatar",
     "text", "url", "posted_at", "replies", "likes", "budget", "ongoing",
     "matched", "query", "score", "last_seen",
 )
@@ -158,6 +162,11 @@ class PostStore:
                 "ALTER TABLE %s ADD COLUMN status TEXT NOT NULL DEFAULT '%s'"
                 % (self.TABLE, DEFAULT_STATUS)
             )
+        if "author_avatar" not in have:
+            # Nullable on purpose: posts saved before this column existed have
+            # no picture, and the table falls back to initials for them until a
+            # later search finds the same post again.
+            conn.execute("ALTER TABLE %s ADD COLUMN author_avatar TEXT" % self.TABLE)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._path, timeout=10)
@@ -189,11 +198,11 @@ class PostStore:
                 """
                 INSERT INTO posts (
                     id, source, author, author_name, author_followers, author_url,
-                    text, url, posted_at, replies, likes, budget, ongoing,
+                    author_avatar, text, url, posted_at, replies, likes, budget, ongoing,
                     matched, query, score, first_seen, last_seen
                 ) VALUES (
                     :id, :source, :author, :author_name, :author_followers, :author_url,
-                    :text, :url, :posted_at, :replies, :likes, :budget, :ongoing,
+                    :author_avatar, :text, :url, :posted_at, :replies, :likes, :budget, :ongoing,
                     :matched, :query, :score, :first_seen, :last_seen
                 )
                 ON CONFLICT(id) DO UPDATE SET %s
@@ -275,6 +284,7 @@ def _to_row(post: dict[str, Any], now: str) -> dict[str, Any]:
         "author_name": post.get("author_name") or "",
         "author_followers": int(post.get("author_followers") or 0),
         "author_url": post.get("author_url") or "",
+        "author_avatar": post.get("author_avatar") or None,
         "text": post.get("text") or "",
         "url": post.get("url") or "",
         "posted_at": post.get("posted_at"),
@@ -298,6 +308,7 @@ def _from_row(row: sqlite3.Row) -> dict[str, Any]:
         "author_name": row["author_name"],
         "author_followers": row["author_followers"],
         "author_url": row["author_url"],
+        "author_avatar": row["author_avatar"],
         "text": row["text"],
         "url": row["url"],
         "posted_at": row["posted_at"],

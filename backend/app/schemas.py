@@ -208,6 +208,9 @@ class PostOut(BaseModel):
     author_name: str
     author_followers: int
     author_url: str
+    #: The author's picture on X. None for a post saved before this was kept,
+    #: and for an account that has none — the table falls back to initials.
+    author_avatar: str | None = None
     text: str
     url: str
     posted_at: str | None

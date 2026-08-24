@@ -140,7 +140,7 @@ export function PostsTable({
                   </td>
                   <td>
                     <div className="ch">
-                      <Avatar src={null} title={p.author_name || p.author} />
+                      <Avatar src={p.author_avatar} title={p.author_name || p.author} />
                       <div style={{ minWidth: 0 }}>
                         <div className="ch-name">
                           <a href={p.author_url} target="_blank" rel="noopener noreferrer">

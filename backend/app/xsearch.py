@@ -68,6 +68,20 @@ def _author(tweet: dict[str, Any]) -> dict[str, Any]:
     return tweet.get("author") or {}
 
 
+def _avatar(url: str | None) -> str | None:
+    """The author's picture, asked for at a size worth drawing.
+
+    X serves these as ``..._normal.jpg`` — 48 pixels, which is soft in a 32px
+    slot on any modern display. ``_bigger`` is the same image at 73px and costs
+    a few hundred bytes more. Anything not matching that suffix is left exactly
+    as it came: guessing at another host's URL scheme is how you end up with a
+    column of broken images.
+    """
+    if not url or not isinstance(url, str):
+        return None
+    return url.replace("_normal.", "_bigger.") if "_normal." in url else url
+
+
 def to_post(tweet: dict[str, Any], query: str = "") -> dict[str, Any] | None:
     """A raw tweet as a stored post, or None when it is not a hiring post."""
     text = _text(tweet)
@@ -84,6 +98,7 @@ def to_post(tweet: dict[str, Any], query: str = "") -> dict[str, Any] | None:
         "author_name": author.get("name") or "",
         "author_followers": int(author.get("followers") or author.get("followers_count") or 0),
         "author_url": f"https://x.com/{handle}" if handle else "",
+        "author_avatar": _avatar(author.get("profilePicture")),
         "text": text,
         "url": tweet.get("url") or tweet.get("twitterUrl") or "",
         "posted_at": tweet.get("createdAt") or tweet.get("created_at"),
