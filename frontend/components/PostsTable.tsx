@@ -14,6 +14,7 @@
 import { useMemo, useState } from "react";
 
 import { Avatar } from "@/components/Avatar";
+import { ExternalLink } from "@/components/ExternalLink";
 import { Icons } from "@/components/Icons";
 import { SortableTh } from "@/components/SortableTh";
 import { StatusCell } from "@/components/StatusCell";
@@ -143,9 +144,9 @@ export function PostsTable({
                       <Avatar src={p.author_avatar} title={p.author_name || p.author} />
                       <div style={{ minWidth: 0 }}>
                         <div className="ch-name">
-                          <a href={p.author_url} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink href={p.author_url}>
                             {p.author_name || p.author}
-                          </a>
+                          </ExternalLink>
                         </div>
                         <div className="ch-sub">
                           @{p.author} · {formatSubscribers(p.author_followers)}
@@ -190,16 +191,14 @@ export function PostsTable({
                   </td>
                   <td>
                     <div style={{ display: "flex", gap: 4 }}>
-                      <a
+                      <ExternalLink
                         className="copy-btn"
                         href={p.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
                         title="Abrir no X"
                         aria-label={`Abrir o pedido de @${p.author} no X (abre em nova aba)`}
                       >
                         <Icons.External size={13} />
-                      </a>
+                      </ExternalLink>
                       <button
                         className="copy-btn"
                         aria-label={`Copiar o link do pedido de @${p.author}`}

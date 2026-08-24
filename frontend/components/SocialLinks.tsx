@@ -9,6 +9,8 @@
  * empty cell honestly means "this channel listed nothing", not "we didn't look".
  */
 
+import { ExternalLink } from "@/components/ExternalLink";
+
 export type Social = { network: string; handle: string; url: string };
 
 type Brand = { label: string; path: React.ReactNode };
@@ -94,11 +96,9 @@ export function SocialLinks({ socials }: { socials: Social[] }) {
         const brand = BRANDS[s.network];
         if (!brand) return null;
         return (
-          <a
+          <ExternalLink
             key={s.network}
             href={s.url}
-            target="_blank"
-            rel="noopener noreferrer"
             className="social"
             style={{ color: `var(--br-${s.network})` }}
             title={`${brand.label}: ${s.handle}`}
@@ -107,7 +107,7 @@ export function SocialLinks({ socials }: { socials: Social[] }) {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               {brand.path}
             </svg>
-          </a>
+          </ExternalLink>
         );
       })}
     </span>

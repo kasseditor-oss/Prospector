@@ -12,6 +12,7 @@ import { useMemo, useState } from "react";
 
 import { Avatar } from "@/components/Avatar";
 import { CadenceStrip, TrendTag } from "@/components/CadenceStrip";
+import { ExternalLink } from "@/components/ExternalLink";
 import { Icons } from "@/components/Icons";
 import { SocialLinks } from "@/components/SocialLinks";
 import { SortableTh } from "@/components/SortableTh";
@@ -139,9 +140,9 @@ export function ChannelTable({
                     <Avatar src={c.thumbnail} title={c.title} />
                     <div style={{ minWidth: 0 }}>
                       <div className="ch-name">
-                        <a href={c.url} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink href={c.url}>
                           {c.title}
-                        </a>
+                        </ExternalLink>
                       </div>
                       <div className="ch-sub">
                         {c.handle ?? "—"} · {COUNTRIES[c.country ?? ""] ?? c.country ?? "—"}
