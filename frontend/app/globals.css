@@ -79,6 +79,9 @@
 
   --warn: #8A5D14;
   --warn-soft: #F7EBD7;
+  /* "Parceria": the one funnel step that is good news, so it gets the one
+     colour the palette did not have. 6.13:1 on white. */
+  --ok: #17703F;
   --danger: #B03A2E;
   --danger-soft: #F8E3E0;
 
@@ -144,6 +147,7 @@
 
     --warn: #E8A33D;
     --warn-soft: #2A1F0C;
+    --ok: #4ADE80;
     --danger: #F0736A;
     --danger-soft: #2C1310;
 
@@ -189,6 +193,7 @@
 
   --warn: #E8A33D;
   --warn-soft: #2A1F0C;
+  --ok: #4ADE80;
   --danger: #F0736A;
   --danger-soft: #2C1310;
 
@@ -845,6 +850,83 @@ tbody tr:hover { background: var(--panel-2); }
   animation: toast-in .22s cubic-bezier(.2, .8, .3, 1);
 }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+
+/* ============================== status ==============================
+   The pill is chrome painted around a native <select>. Only the dot carries
+   the colour; the label stays in body ink, so the column reads the same to
+   someone who cannot tell the four hues apart. */
+.stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 22px 0 9px;
+  height: 26px;
+  border: 1px solid var(--rule);
+  border-radius: 13px;
+  background: var(--panel-2);
+  white-space: nowrap;
+}
+.stat:hover { border-color: var(--rule-2); }
+/* The ring goes on the pill because the select inside has no border of its
+   own to draw one around. */
+.stat:focus-within {
+  border-color: var(--signal);
+  box-shadow: 0 0 0 3px var(--signal-soft);
+}
+.stat-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+/* The word you read. A span sizes the way text sizes; the select tried to and
+   collapsed to 16px, which is why it is no longer the thing being looked at. */
+.stat-label {
+  font-size: 12.5px;
+  line-height: 1;
+  color: var(--ink);
+  white-space: nowrap;
+}
+/* The control you use: the real <select>, laid invisibly over the whole pill.
+   Native menu, native keyboard, native accessibility — none of it drawn by us. */
+.stat-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: inherit;
+  opacity: 0;
+  font: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.stat-input:focus { outline: none; box-shadow: none; }
+.stat {
+  position: relative;
+  color: var(--ink-3);
+}
+.stat::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  width: 0;
+  height: 0;
+  border-top: 4px solid var(--ink-3);
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  pointer-events: none;
+}
+/* Only the dot is tinted: .stat carries the colour, the label overrides it. */
+.stat--novo      { color: var(--ink-3); }
+.stat--contatado { color: var(--signal); }
+.stat--respondeu { color: var(--warn); }
+.stat--parceria  { color: var(--ok); }
+.stat--failed { border-color: var(--danger); }
 
 /* ============================== fonte / pedidos ==============================
    The X source is the same product looking at a different kind of lead, so it

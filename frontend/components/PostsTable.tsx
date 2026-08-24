@@ -16,6 +16,7 @@ import { useMemo, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { Icons } from "@/components/Icons";
 import { SortableTh } from "@/components/SortableTh";
+import { StatusCell } from "@/components/StatusCell";
 import {
   ageBand,
   formatAge,
@@ -24,6 +25,7 @@ import {
   scoreColor,
   toPostsCsv,
   type Post,
+  type Status,
 } from "@/lib/api";
 
 export type PostSortKey = "score" | "age" | "author_followers" | "replies";
@@ -35,6 +37,10 @@ type Props = {
   actions?: React.ReactNode;
   onDelete?: (post: Post) => void;
   regionLabel?: string;
+  /** When given, each row can be moved along the funnel. */
+  onStatus?: (post: Post, status: Status) => Promise<void>;
+  /** The funnel's words, as the backend spells them. */
+  statusNames?: Record<string, string>;
 };
 
 export function PostsTable({
@@ -44,6 +50,8 @@ export function PostsTable({
   actions,
   onDelete,
   regionLabel = "Pedidos",
+  onStatus,
+  statusNames = {},
 }: Props) {
   const [sortKey, setSortKey] = useState<PostSortKey>("score");
   const [sortDir, setSortDir] = useState<-1 | 1>(-1);
@@ -106,6 +114,7 @@ export function PostsTable({
               <SortableTh label="Urgência" k="score" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
               <SortableTh label="Idade" k="age" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
               <SortableTh label="Quem pediu" k="author_followers" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              {onStatus ? <th scope="col">Status</th> : null}
               <th scope="col">O pedido</th>
               <SortableTh label="Respostas" k="replies" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
               <th scope="col">
@@ -144,6 +153,16 @@ export function PostsTable({
                       </div>
                     </div>
                   </td>
+                  {onStatus ? (
+                    <td>
+                      <StatusCell
+                        value={p.status ?? "novo"}
+                        label={`@${p.author}`}
+                        names={statusNames}
+                        onChange={(next) => onStatus(p, next)}
+                      />
+                    </td>
+                  ) : null}
                   <td>
                     <p className="pcell">
                       <Highlighted text={p.text} phrase={p.matched} />

@@ -15,6 +15,7 @@ import { CadenceStrip, TrendTag } from "@/components/CadenceStrip";
 import { Icons } from "@/components/Icons";
 import { SocialLinks } from "@/components/SocialLinks";
 import { SortableTh } from "@/components/SortableTh";
+import { StatusCell } from "@/components/StatusCell";
 import {
   COUNTRIES,
   formatDays,
@@ -22,6 +23,7 @@ import {
   scoreColor,
   toCsv,
   type Channel,
+  type Status,
 } from "@/lib/api";
 
 export type SortKey =
@@ -42,6 +44,10 @@ type Props = {
   onDelete?: (channel: Channel) => void;
   /** Label for the scroll region, announced to screen readers. */
   regionLabel?: string;
+  /** When given, each row can be moved along the funnel. */
+  onStatus?: (channel: Channel, status: Status) => Promise<void>;
+  /** The funnel's words, as the backend spells them. */
+  statusNames?: Record<string, string>;
 };
 
 export function ChannelTable({
@@ -51,6 +57,8 @@ export function ChannelTable({
   actions,
   onDelete,
   regionLabel = "Resultados",
+  onStatus,
+  statusNames = {},
 }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDir, setSortDir] = useState<-1 | 1>(-1);
@@ -110,6 +118,7 @@ export function ChannelTable({
               <SortableTh label="Canal" k="title" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
               <SortableTh label="Inscritos" k="subscribers" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
               <SortableTh label="Score" k="score" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              {onStatus ? <th scope="col">Status</th> : null}
               <th scope="col">E-mail</th>
               <th scope="col">Redes</th>
               <th scope="col">Cadência · 12m</th>
@@ -154,6 +163,16 @@ export function ChannelTable({
                     <b>{c.score.total}</b>
                   </div>
                 </td>
+                {onStatus ? (
+                  <td>
+                    <StatusCell
+                      value={(c as { status?: Status }).status ?? "novo"}
+                      label={c.title}
+                      names={statusNames}
+                      onChange={(next) => onStatus(c, next)}
+                    />
+                  </td>
+                ) : null}
                 <td>
                   {c.email ? (
                     <>

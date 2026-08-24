@@ -24,6 +24,7 @@ from .keyring import (
 )
 from .schemas import (
     ChannelOut,
+    StatusIn,
     EstimateResponse,
     KeyIn,
     KeyOut,
@@ -44,6 +45,7 @@ from .schemas import (
 from .leads import LeadStore
 from .posts import PostStore, hours_old
 from .scoring import score_channel
+from .status import STATUSES, is_valid
 from .xsearch import DEFAULT_TERMS, XClient, XSearchError, account_credit
 from .store import SecretStore, build_store, masked
 from .xsearch import DEFAULT_ACTOR
@@ -278,6 +280,30 @@ async def search(
     )
 
 
+@app.get("/api/statuses")
+async def statuses() -> dict[str, str]:
+    """The funnel, named. Read by both bases so the words live in one place."""
+    return dict(STATUSES)
+
+
+@app.patch("/api/leads/{channel_id}/status", status_code=204)
+async def set_lead_status(channel_id: str, payload: StatusIn) -> None:
+    if not is_valid(payload.status):
+        raise HTTPException(status_code=422, detail="Status desconhecido.")
+    moved = await asyncio.to_thread(leads.set_status, channel_id, payload.status)
+    if not moved:
+        raise HTTPException(status_code=404, detail="Canal não encontrado na base.")
+
+
+@app.patch("/api/posts/{post_id}/status", status_code=204)
+async def set_post_status(post_id: str, payload: StatusIn) -> None:
+    if not is_valid(payload.status):
+        raise HTTPException(status_code=422, detail="Status desconhecido.")
+    moved = await asyncio.to_thread(posts.set_status, post_id, payload.status)
+    if not moved:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado.")
+
+
 @app.get("/api/leads", response_model=LeadsResponse)
 async def list_leads(
     q: str = "",
@@ -285,10 +311,17 @@ async def list_leads(
     limit: int = 500,
     offset: int = 0,
     with_email: bool = False,
+    status: str = "",
 ) -> LeadsResponse:
     """The accumulated base. Independent of any single search."""
     rows, total = await asyncio.to_thread(
-        leads.list, query=q, sort=sort, limit=limit, offset=offset, with_email=with_email
+        leads.list,
+        query=q,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+        with_email=with_email,
+        status=status,
     )
     return LeadsResponse(leads=[LeadOut(**row) for row in rows], total=total)
 
@@ -411,6 +444,7 @@ async def list_posts(
     offset: int = 0,
     with_budget: bool = False,
     min_followers: int = 0,
+    status: str = "",
 ) -> PostsResponse:
     """The saved hiring posts. Separate from the channel base, on purpose."""
     rows, total = await asyncio.to_thread(
@@ -421,6 +455,7 @@ async def list_posts(
         offset=offset,
         with_budget=with_budget,
         min_followers=min_followers,
+        status=status,
     )
     return PostsResponse(posts=[PostOut(**row) for row in rows], total=total)
 

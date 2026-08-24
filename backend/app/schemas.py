@@ -107,8 +107,10 @@ class ChannelOut(BaseModel):
 
 
 class LeadOut(ChannelOut):
-    """A saved lead: a channel plus when it entered and last refreshed."""
+    """A saved lead: a channel, where it stands with you, and its history."""
 
+    #: Where this lead is in the funnel. See app.status for the vocabulary.
+    status: str = "novo"
     first_seen: datetime
     last_seen: datetime
 
@@ -136,6 +138,12 @@ class EstimateResponse(BaseModel):
     units: int
     units_remaining: int
     affordable: bool
+
+
+class StatusIn(BaseModel):
+    """Moving one lead along the funnel."""
+
+    status: str = Field(min_length=1, max_length=20)
 
 
 class KeyIn(BaseModel):
@@ -213,6 +221,8 @@ class PostOut(BaseModel):
     matched: str
     query: str
     score: int
+    #: Where this lead is in the funnel. See app.status for the vocabulary.
+    status: str = "novo"
     hours_old: float | None = None
     #: Absent on a post that is being returned by a search: it has just been
     #: found, so it has no history in the base yet. Present when read back.

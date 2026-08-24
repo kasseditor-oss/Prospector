@@ -39,6 +39,25 @@ export type Channel = {
   score: ScoreDetail;
 };
 
+/**
+ * Where a lead stands with you.
+ *
+ * Four steps, matching app/status.py. The words are read from the backend at
+ * startup rather than repeated here, so a fifth step never has to be added in
+ * two places — but the keys are typed, because the table styles each one.
+ */
+export type Status = "novo" | "contatado" | "respondeu" | "parceria";
+
+export const STATUS_ORDER: Status[] = ["novo", "contatado", "respondeu", "parceria"];
+
+/** Fallback names, used only until /api/statuses answers. */
+export const STATUS_LABELS: Record<Status, string> = {
+  novo: "Não contatado",
+  contatado: "Contatado",
+  respondeu: "Respondeu",
+  parceria: "Parceria",
+};
+
 export type SearchFilters = {
   niches: string[];
   country: string;
@@ -111,6 +130,7 @@ export type Post = {
   matched: string;
   query: string;
   score: number;
+  status: Status;
   hours_old: number | null;
   first_seen?: string | null;
   last_seen?: string | null;
@@ -145,6 +165,7 @@ export type PostQuery = {
   sort?: string;
   withBudget?: boolean;
   minFollowers?: number;
+  status?: string;
   limit?: number;
 };
 
@@ -220,12 +241,24 @@ export const api = {
     if (params.q) qs.set("q", params.q);
     if (params.sort) qs.set("sort", params.sort);
     if (params.withEmail) qs.set("with_email", "true");
+    if (params.status) qs.set("status", params.status);
     qs.set("limit", String(params.limit ?? 1000));
     return request<LeadsResponse>(`/leads?${qs.toString()}`);
   },
   removeLead: (id: string) =>
     request<void>(`/leads/${encodeURIComponent(id)}`, { method: "DELETE" }),
   clearLeads: () => request<{ removed: number }>("/leads", { method: "DELETE" }),
+  statuses: () => request<Record<string, string>>("/statuses"),
+  setLeadStatus: (id: string, status: Status) =>
+    request<void>(`/leads/${encodeURIComponent(id)}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  setPostStatus: (id: string, status: Status) =>
+    request<void>(`/posts/${encodeURIComponent(id)}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
 
   xToken: () => request<ApifyToken>("/x/token"),
   saveXToken: (token: string, actor?: string) =>
@@ -248,6 +281,7 @@ export const api = {
     if (params.sort) qs.set("sort", params.sort);
     if (params.withBudget) qs.set("with_budget", "true");
     if (params.minFollowers) qs.set("min_followers", String(params.minFollowers));
+    if (params.status) qs.set("status", params.status);
     qs.set("limit", String(params.limit ?? 500));
     return request<PostsResponse>(`/posts?${qs.toString()}`);
   },
@@ -260,11 +294,16 @@ export type LeadQuery = {
   q?: string;
   sort?: string;
   withEmail?: boolean;
+  status?: string;
   limit?: number;
 };
 
-/** A saved channel, plus when it entered the base and last refreshed. */
-export type Lead = Channel & { first_seen: string; last_seen: string };
+/** A saved channel, plus where it stands with you and its history. */
+export type Lead = Channel & {
+  status: Status;
+  first_seen: string;
+  last_seen: string;
+};
 
 export type LeadsResponse = { leads: Lead[]; total: number };
 
@@ -353,7 +392,7 @@ function csvCell(value: unknown): string {
 export function toPostsCsv(posts: Post[]): string {
   const header = [
     "score", "idade_h", "autor", "nome", "seguidores", "respostas",
-    "paga", "recorrente", "texto", "link", "perfil", "postado_em",
+    "paga", "recorrente", "status", "texto", "link", "perfil", "postado_em",
   ];
   const rows = posts.map((p) =>
     [
@@ -365,6 +404,7 @@ export function toPostsCsv(posts: Post[]): string {
       p.replies,
       p.budget ? "sim" : "nao",
       p.ongoing ? "sim" : "nao",
+      STATUS_LABELS[p.status] ?? p.status,
       // Newlines inside a tweet would otherwise break the row in two.
       p.text.replace(/\s+/g, " ").trim(),
       p.url,
@@ -382,7 +422,7 @@ export function toCsv(channels: Channel[]): string {
   const cols = [
     "title", "handle", "url", "subscribers", "score", "email",
     "uploads_per_month", "cadence_trend", "days_since_last_upload",
-    "country", "niche",
+    "country", "niche", "status",
   ] as const;
   // Socials flatten into one cell of URLs: a CRM import wants the links, not a
   // column per network that would be empty on most rows.

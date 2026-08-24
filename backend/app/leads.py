@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from .paths import data_dir
+from .status import DEFAULT_STATUS, clean
 
 
 def _default_path() -> Path:
@@ -52,6 +53,7 @@ CREATE TABLE IF NOT EXISTS leads (
     days_since_last_upload INTEGER,
     last_upload_at         TEXT,
     niche                  TEXT NOT NULL DEFAULT '',
+    status                 TEXT NOT NULL DEFAULT 'novo',
     score                  INTEGER NOT NULL DEFAULT 0,
     score_detail           TEXT NOT NULL DEFAULT '{}',
     first_seen             TEXT NOT NULL,
@@ -63,7 +65,10 @@ CREATE INDEX IF NOT EXISTS leads_by_seen ON leads (first_seen DESC);
 
 # Columns refreshed when a channel turns up in a later search. ``first_seen``
 # is deliberately absent: it records when this lead entered the base, and a
-# re-find must not rewrite that history.
+# re-find must not rewrite that history. ``status`` is absent for a stronger
+# reason — it is the only column here the *user* wrote. Refreshing it would
+# quietly reset "Contatado" to "Não contatado" on the next search, and the
+# reader would have no way to know it happened.
 _REFRESHED = (
     "title", "handle", "url", "subscribers", "subscribers_hidden", "video_count",
     "country", "thumbnail", "email", "socials", "uploads_per_month", "cadence",
@@ -87,6 +92,8 @@ def _now() -> str:
 class LeadStore:
     """Every channel ever found, deduplicated by YouTube channel id."""
 
+    TABLE = "leads"
+
     def __init__(self, path: str | Path | None = None) -> None:
         raw = str(path or os.getenv("PROSPECTOR_DB") or _default_path())
         self.path = raw
@@ -101,6 +108,22 @@ class LeadStore:
         self._lock = threading.Lock()
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            self._migrate(conn)
+
+
+    def _migrate(self, conn) -> None:
+        """Add columns that older databases predate.
+
+        The base is the point of the app — it holds work that cost quota and
+        money — so a new column has to arrive without asking anyone to start
+        over. SQLite has no ADD COLUMN IF NOT EXISTS, hence the lookup.
+        """
+        have = {row["name"] for row in conn.execute("PRAGMA table_info(%s)" % self.TABLE)}
+        if "status" not in have:
+            conn.execute(
+                "ALTER TABLE %s ADD COLUMN status TEXT NOT NULL DEFAULT '%s'"
+                % (self.TABLE, DEFAULT_STATUS)
+            )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -162,6 +185,16 @@ class LeadStore:
         new = sum(1 for i in ids if i not in known)
         return (new, len(rows) - new)
 
+
+    def set_status(self, row_id: str, status: str) -> bool:
+        """Move one lead along the funnel. False when there is no such lead."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE %s SET status = ? WHERE id = ?" % self.TABLE,
+                (clean(status), row_id),
+            )
+            return cur.rowcount > 0
+
     def delete(self, channel_id: str) -> bool:
         with self._connect() as conn:
             cur = conn.execute("DELETE FROM leads WHERE id = ?", (channel_id,))
@@ -184,9 +217,15 @@ class LeadStore:
         limit: int = 500,
         offset: int = 0,
         with_email: bool = False,
+        status: str = "",
     ) -> tuple[list[dict[str, Any]], int]:
         where: list[str] = []
         args: list[Any] = []
+        if status.strip():
+            # Compared against the cleaned value so an unknown name filters to
+            # nothing rather than silently listing the whole base.
+            where.append("status = ?")
+            args.append(clean(status))
         if query.strip():
             where.append("(title LIKE ? OR handle LIKE ? OR niche LIKE ?)")
             like = "%%%s%%" % query.strip()
@@ -262,6 +301,7 @@ def _from_row(row: sqlite3.Row) -> dict[str, Any]:
         "days_since_last_upload": row["days_since_last_upload"],
         "last_upload_at": row["last_upload_at"],
         "niche": row["niche"],
+        "status": clean(row["status"]),
         "score": json.loads(row["score_detail"]),
         "first_seen": row["first_seen"],
         "last_seen": row["last_seen"],

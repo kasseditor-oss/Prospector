@@ -10,6 +10,8 @@ import {
   COUNTRIES,
   api,
   formatUsd,
+  STATUS_LABELS,
+  STATUS_ORDER,
   type ApiKey,
   type ApifyToken,
   type Channel,
@@ -17,11 +19,32 @@ import {
   type Post,
   type Quota,
   type SearchFilters,
+  type Status,
   type XSearchFilters,
   type XSearchResponse,
 } from "@/lib/api";
 
 type Page = "search" | "saved" | "keys";
+
+/**
+ * The funnel's words, read once from the backend.
+ *
+ * Both bases render them and app/status.py owns them. The built-in copy is the
+ * fallback, so a backend that has not answered yet draws a readable table
+ * rather than four raw keys.
+ */
+function useStatusNames(): Record<string, string> {
+  const [names, setNames] = useState<Record<string, string>>(STATUS_LABELS);
+  useEffect(() => {
+    api
+      .statuses()
+      .then((data) => {
+        if (Object.keys(data).length) setNames(data);
+      })
+      .catch(() => {});
+  }, []);
+  return names;
+}
 
 /**
  * Which kind of lead the app is looking at.
@@ -675,7 +698,9 @@ function SavedPanel({
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState("");
   const [emailOnly, setEmailOnly] = useState(false);
+  const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const statusNames = useStatusNames();
 
   const load = useCallback(async () => {
     setError(null);
@@ -683,7 +708,7 @@ function SavedPanel({
       // Two reads rather than one: the filtered page, and a bare count of the
       // base. Both are local SQLite, and the second is a COUNT with limit=1.
       const [data, all] = await Promise.all([
-        api.listLeads({ q: query, withEmail: emailOnly }),
+        api.listLeads({ q: query, withEmail: emailOnly, status }),
         api.listLeads({ limit: 1 }),
       ]);
       setLeads(data.leads);
@@ -692,13 +717,24 @@ function SavedPanel({
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Não foi possível ler a base.");
     }
-  }, [query, emailOnly, onCountChange]);
+  }, [query, emailOnly, status, onCountChange]);
 
   useEffect(() => {
     // Debounced so typing in the filter does not fire a request per keystroke.
     const timer = setTimeout(() => void load(), 220);
     return () => clearTimeout(timer);
   }, [load]);
+
+
+  async function move(lead: Lead, next: Status) {
+    await api.setLeadStatus(lead.id, next);
+    // Patch the row in place instead of reloading. A reload would reorder the
+    // table under the cursor, and with an Etapa filter on, the row just marked
+    // would vanish from under the click that marked it.
+    setLeads((rows) =>
+      rows ? rows.map((r) => (r.id === lead.id ? { ...r, status: next } : r)) : rows,
+    );
+  }
 
   async function remove(lead: Lead) {
     try {
@@ -722,7 +758,7 @@ function SavedPanel({
     }
   }
 
-  const filtering = query.trim().length > 0 || emailOnly;
+  const filtering = query.trim().length > 0 || emailOnly || status !== "";
 
   return (
     <section>
@@ -741,7 +777,7 @@ function SavedPanel({
       ) : null}
 
       <div className="panel" style={{ padding: "var(--s4)", marginBottom: "var(--s4)" }}>
-        <div className="grid-2">
+        <div className="filters">
           <div className="field">
             <label htmlFor="lead-q">Filtrar</label>
             <input
@@ -751,6 +787,17 @@ function SavedPanel({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+          </div>
+          <div className="field">
+            <label htmlFor="lead-status">Etapa</label>
+            <select id="lead-status" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">Todas as etapas</option>
+              {STATUS_ORDER.map((key) => (
+                <option key={key} value={key}>
+                  {statusNames[key] ?? key}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="field" style={{ justifyContent: "flex-end" }}>
             <label className="check">
@@ -782,6 +829,8 @@ function SavedPanel({
             </>
           }
           onDelete={(c) => void remove(c as Lead)}
+          onStatus={(c, next) => move(c as Lead, next)}
+          statusNames={statusNames}
           actions={
             <button className="btn btn-ghost btn-sm" onClick={() => void clearAll()}>
               <Icons.Trash size={15} />
@@ -1135,7 +1184,9 @@ function PostsPanel({
   const [query, setQuery] = useState("");
   const [budgetOnly, setBudgetOnly] = useState(false);
   const [minFollowers, setMinFollowers] = useState(0);
+  const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const statusNames = useStatusNames();
 
   const load = useCallback(async () => {
     setError(null);
@@ -1143,7 +1194,13 @@ function PostsPanel({
       // Sorted by urgency at the source, not just in the table: the base can
       // outgrow one page, and the page you get should be the one worth reading.
       const [data, all] = await Promise.all([
-        api.listPosts({ q: query, sort: "score", withBudget: budgetOnly, minFollowers }),
+        api.listPosts({
+          q: query,
+          sort: "score",
+          withBudget: budgetOnly,
+          minFollowers,
+          status,
+        }),
         api.listPosts({ limit: 1 }),
       ]);
       setPosts(data.posts);
@@ -1152,12 +1209,20 @@ function PostsPanel({
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Não foi possível ler a base.");
     }
-  }, [query, budgetOnly, minFollowers, onCountChange]);
+  }, [query, budgetOnly, minFollowers, status, onCountChange]);
 
   useEffect(() => {
     const timer = setTimeout(() => void load(), 220);
     return () => clearTimeout(timer);
   }, [load]);
+
+
+  async function move(post: Post, next: Status) {
+    await api.setPostStatus(post.id, next);
+    setPosts((rows) =>
+      rows ? rows.map((r) => (r.id === post.id ? { ...r, status: next } : r)) : rows,
+    );
+  }
 
   async function remove(post: Post) {
     try {
@@ -1180,7 +1245,8 @@ function PostsPanel({
     }
   }
 
-  const filtering = query.trim().length > 0 || budgetOnly || minFollowers > 0;
+  const filtering =
+    query.trim().length > 0 || budgetOnly || minFollowers > 0 || status !== "";
 
   return (
     <section>
@@ -1212,6 +1278,17 @@ function PostsPanel({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+          </div>
+          <div className="field">
+            <label htmlFor="post-status">Etapa</label>
+            <select id="post-status" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">Todas as etapas</option>
+              {STATUS_ORDER.map((key) => (
+                <option key={key} value={key}>
+                  {statusNames[key] ?? key}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="field">
             <label htmlFor="post-fol">Seguidores (mín.)</label>
@@ -1259,6 +1336,8 @@ function PostsPanel({
             </>
           }
           onDelete={(p) => void remove(p)}
+          onStatus={move}
+          statusNames={statusNames}
           actions={
             <button className="btn btn-ghost btn-sm" onClick={() => void clearAll()}>
               <Icons.Trash size={15} />

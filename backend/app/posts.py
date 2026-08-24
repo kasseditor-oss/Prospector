@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from .paths import data_dir
+from .status import DEFAULT_STATUS, clean
 
 
 def _default_path() -> Path:
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS posts (
     matched           TEXT NOT NULL DEFAULT '',
     query             TEXT NOT NULL DEFAULT '',
     score             INTEGER NOT NULL DEFAULT 0,
+    status            TEXT NOT NULL DEFAULT 'novo',
     first_seen        TEXT NOT NULL,
     last_seen         TEXT NOT NULL
 );
@@ -54,6 +56,8 @@ CREATE INDEX IF NOT EXISTS posts_by_score  ON posts (score DESC);
 
 # Refreshed when the same post turns up again. ``first_seen`` is absent for the
 # same reason as in the lead base: finding it twice is not finding it anew.
+# ``status`` is absent because it is the reader's own note — a search must never
+# reset a post already marked as answered.
 _REFRESHED = (
     "source", "author", "author_name", "author_followers", "author_url",
     "text", "url", "posted_at", "replies", "likes", "budget", "ongoing",
@@ -128,6 +132,8 @@ def score_post(post: dict[str, Any], now: datetime | None = None) -> int:
 class PostStore:
     """Hiring posts kept on this machine, growing with every search."""
 
+    TABLE = "posts"
+
     def __init__(self, path: Path | str | None = None) -> None:
         raw = str(path) if path else str(_default_path())
         if raw != ":memory:":
@@ -136,6 +142,22 @@ class PostStore:
         self._lock = threading.Lock()
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            self._migrate(conn)
+            conn.commit()
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        """Add columns that an older database predates.
+
+        This base holds posts that cost real money to find, so a new column has
+        to arrive without throwing them away. SQLite has no ADD COLUMN IF NOT
+        EXISTS, hence the lookup.
+        """
+        have = {row["name"] for row in conn.execute("PRAGMA table_info(%s)" % self.TABLE)}
+        if "status" not in have:
+            conn.execute(
+                "ALTER TABLE %s ADD COLUMN status TEXT NOT NULL DEFAULT '%s'"
+                % (self.TABLE, DEFAULT_STATUS)
+            )
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._path, timeout=10)
@@ -182,6 +204,15 @@ class PostStore:
         new = sum(1 for i in ids if i not in known)
         return (new, len(ids) - new)
 
+    def set_status(self, post_id: str, status: str) -> bool:
+        """Move one post along the funnel. False when there is no such post."""
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE posts SET status = ? WHERE id = ?", (clean(status), post_id)
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
     def delete(self, post_id: str) -> bool:
         with self._lock, self._connect() as conn:
             return conn.execute("DELETE FROM posts WHERE id = ?", (post_id,)).rowcount > 0
@@ -204,9 +235,15 @@ class PostStore:
         offset: int = 0,
         with_budget: bool = False,
         min_followers: int = 0,
+        status: str = "",
     ) -> tuple[list[dict[str, Any]], int]:
         where: list[str] = []
         args: list[Any] = []
+        if status.strip():
+            # Cleaned first, so an unknown name filters to nothing instead of
+            # quietly listing everything.
+            where.append("status = ?")
+            args.append(clean(status))
         if query.strip():
             where.append("(text LIKE ? OR author LIKE ? OR author_name LIKE ?)")
             like = "%%%s%%" % query.strip()
@@ -271,6 +308,7 @@ def _from_row(row: sqlite3.Row) -> dict[str, Any]:
         "matched": row["matched"],
         "query": row["query"],
         "score": row["score"],
+        "status": clean(row["status"]),
         "hours_old": hours_old(row["posted_at"]),
         "first_seen": row["first_seen"],
         "last_seen": row["last_seen"],
