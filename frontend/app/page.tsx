@@ -459,7 +459,13 @@ function SearchPanel({
       const message =
         err instanceof ApiError ? err.message : "Não foi possível falar com a API.";
       setError(message);
-      if (err instanceof ApiError && err.status === 428) goKeys();
+      if (err instanceof ApiError && err.status === 428) {
+        // Say why before moving them: the banner carrying this text belongs to
+        // the panel that is about to unmount, so without the toast the reader
+        // presses a button and simply arrives somewhere else.
+        notify(message);
+        goKeys();
+      }
     } finally {
       setRunning(false);
     }
@@ -890,7 +896,12 @@ function XSearchPanel({
       const message =
         err instanceof ApiError ? err.message : "Não foi possível falar com a API.";
       setError(message);
-      if (err instanceof ApiError && err.status === 428) goKeys();
+      if (err instanceof ApiError && err.status === 428) {
+        // Same reason as the channels search: the reader has to be told why
+        // the screen changed under them.
+        notify(message);
+        goKeys();
+      }
     } finally {
       setRunning(false);
     }
