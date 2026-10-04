@@ -68,7 +68,10 @@ def test_measured_cadence_beats_the_lifetime_average():
 
 
 def test_rate_falls_back_to_lifetime_without_history():
-    channel = _channel(video_count=120, published_at=NOW - timedelta(days=365))
+    # Measured from today, not from NOW: the lifetime rate divides by the
+    # channel's real age, so a fixed date drifts out of range as weeks pass.
+    born = datetime.now(timezone.utc) - timedelta(days=365)
+    channel = _channel(video_count=120, published_at=born)
     assert channel.cadence == []
     assert 9.0 < channel.uploads_per_month < 11.0
 

@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS leads (
     last_upload_at         TEXT,
     niche                  TEXT NOT NULL DEFAULT '',
     status                 TEXT NOT NULL DEFAULT 'novo',
+    emailed_at             TEXT,
     score                  INTEGER NOT NULL DEFAULT 0,
     score_detail           TEXT NOT NULL DEFAULT '{}',
     first_seen             TEXT NOT NULL,
@@ -68,7 +69,8 @@ CREATE INDEX IF NOT EXISTS leads_by_seen ON leads (first_seen DESC);
 # re-find must not rewrite that history. ``status`` is absent for a stronger
 # reason — it is the only column here the *user* wrote. Refreshing it would
 # quietly reset "Contatado" to "Não contatado" on the next search, and the
-# reader would have no way to know it happened.
+# reader would have no way to know it happened. ``emailed_at`` is absent for
+# the same reason: it is the record of a message that really went out.
 _REFRESHED = (
     "title", "handle", "url", "subscribers", "subscribers_hidden", "video_count",
     "country", "thumbnail", "email", "socials", "uploads_per_month", "cadence",
@@ -124,6 +126,8 @@ class LeadStore:
                 "ALTER TABLE %s ADD COLUMN status TEXT NOT NULL DEFAULT '%s'"
                 % (self.TABLE, DEFAULT_STATUS)
             )
+        if "emailed_at" not in have:
+            conn.execute("ALTER TABLE %s ADD COLUMN emailed_at TEXT" % self.TABLE)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -195,6 +199,25 @@ class LeadStore:
             )
             return cur.rowcount > 0
 
+    def mark_emailed(self, row_id: str) -> bool:
+        """Record that a message went out to this lead, and move it along.
+
+        One statement, so the timestamp and the funnel step can never disagree.
+        A lead that already answered or became a client keeps its step: being
+        written to again does not send the conversation backwards.
+        """
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE leads
+                   SET emailed_at = ?,
+                       status = CASE WHEN status = ? THEN 'contatado' ELSE status END
+                 WHERE id = ?
+                """,
+                (_now(), DEFAULT_STATUS, row_id),
+            )
+            return cur.rowcount > 0
+
     def delete(self, channel_id: str) -> bool:
         with self._connect() as conn:
             cur = conn.execute("DELETE FROM leads WHERE id = ?", (channel_id,))
@@ -208,6 +231,24 @@ class LeadStore:
     def count(self) -> int:
         with self._connect() as conn:
             return int(conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0])
+
+    def get(self, row_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM leads WHERE id = ?", (row_id,)).fetchone()
+        return _from_row(row) if row else None
+
+    def emailed_since(self, moment: str) -> int:
+        """How many messages went out at or after an ISO timestamp.
+
+        The stamps are all written by :func:`_now` in one format, so comparing
+        them as text orders them as time.
+        """
+        with self._connect() as conn:
+            return int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM leads WHERE emailed_at >= ?", (moment,)
+                ).fetchone()[0]
+            )
 
     def list(
         self,
@@ -302,6 +343,7 @@ def _from_row(row: sqlite3.Row) -> dict[str, Any]:
         "last_upload_at": row["last_upload_at"],
         "niche": row["niche"],
         "status": clean(row["status"]),
+        "emailed_at": row["emailed_at"],
         "score": json.loads(row["score_detail"]),
         "first_seen": row["first_seen"],
         "last_seen": row["last_seen"],

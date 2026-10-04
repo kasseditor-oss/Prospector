@@ -111,6 +111,8 @@ class LeadOut(ChannelOut):
 
     #: Where this lead is in the funnel. See app.status for the vocabulary.
     status: str = "novo"
+    #: When a message was last sent to this lead from the app. None if never.
+    emailed_at: datetime | None = None
     first_seen: datetime
     last_seen: datetime
 
@@ -167,6 +169,57 @@ class QuotaOut(BaseModel):
     #: How keys are kept between launches, in words the user can act on. The
     #: keys screen states the actual guarantee rather than a generic promise.
     key_storage: str = "não são salvas (some ao fechar)"
+
+
+# ==================================================================== e-mail
+class MailAccountIn(BaseModel):
+    """The mailbox messages are sent from."""
+
+    user: str = Field(min_length=5, max_length=200, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    #: Empty keeps the password already saved, so changing the daily limit does
+    #: not mean typing the password again.
+    password: str = Field(default="", max_length=200)
+    #: Empty means "work it out from the address", which covers the big
+    #: providers. Anything else has to be typed.
+    host: str = Field(default="", max_length=200)
+    port: int = Field(default=0, ge=0, le=65535)
+    from_name: str = Field(default="", max_length=80)
+    daily_limit: int = Field(default=40, ge=1, le=300)
+
+
+class MailTemplateIn(BaseModel):
+    subject: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=10_000)
+
+
+class MailStateOut(BaseModel):
+    """Everything the e-mail screen draws. Never carries the password."""
+
+    configured: bool
+    user: str = ""
+    host: str = ""
+    port: int = 0
+    from_name: str = ""
+    daily_limit: int = 40
+    #: Messages sent in the last 24 hours, and how many are left before the cap.
+    sent_today: int = 0
+    remaining_today: int = 0
+    subject: str
+    body: str
+    #: The names the template can use, so the screen lists what really works.
+    placeholders: list[str]
+
+
+class MailSendIn(BaseModel):
+    lead_id: str = Field(min_length=1, max_length=100)
+    #: Write again to a lead that already got a message from the app.
+    resend: bool = False
+
+
+class MailSentOut(BaseModel):
+    to: str
+    sent_today: int
+    remaining_today: int
 
 
 # ================================================================ X / pedidos
