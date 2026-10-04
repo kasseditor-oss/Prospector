@@ -343,7 +343,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* A hint that contradicts the form is a warning, not a note. */
 .field .hint-warn { color: var(--warn); }
 
-input[type=text], input[type=email], input[type=number], select, textarea {
+input[type=text], input[type=email], input[type=password], input[type=number], select, textarea {
   width: 100%;
   padding: 9px 11px;
   border: 1px solid var(--rule-2);
@@ -1108,3 +1108,32 @@ tbody tr:hover { background: var(--panel-2); }
   .brand span { display: none; }
   .srcbar button { padding: 0 9px; font-size: 12px; }
 }
+
+/* ------------------------------------------------------------------ e-mail */
+/* The recipient list scrolls inside its own box: with a few hundred leads the
+   send button would otherwise sit a screen and a half below the message it
+   sends. */
+.mail-list { max-height: 340px; overflow-y: auto; }
+.mail-list td:first-child, .mail-list th:first-child { width: 36px; }
+.mail-list input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--signal); }
+.mail-body { min-height: 260px; font-size: 14px; }
+.mail-preview {
+  margin-top: var(--s4);
+  padding: var(--s4);
+  border: 1px dashed var(--rule-2);
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mail-preview b { display: block; margin-bottom: var(--s2); }
+.mail-run {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+  align-items: center;
+  margin-top: var(--s4);
+}
+.mail-log { margin-top: var(--s3); display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.mail-log .fail { color: var(--danger); }

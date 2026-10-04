@@ -8,7 +8,9 @@ where anyone can read it out of the network tab.
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -33,6 +35,11 @@ from .schemas import (
     SearchFilters,
     LeadOut,
     LeadsResponse,
+    MailAccountIn,
+    MailSendIn,
+    MailSentOut,
+    MailStateOut,
+    MailTemplateIn,
     PostOut,
     PostsResponse,
     SearchResponse,
@@ -44,6 +51,7 @@ from .schemas import (
 )
 from .leads import LeadStore
 from .localonly import LocalOnly
+from . import mailer
 from .posts import PostStore, hours_old
 from .scoring import score_channel
 from .status import STATUSES, is_valid
@@ -344,6 +352,223 @@ async def clear_leads() -> dict[str, int]:
     """Empty the base. The UI asks for confirmation before calling this."""
     removed = await asyncio.to_thread(leads.clear)
     return {"removed": removed}
+
+
+# ==================================================================== e-mail
+# Writing to the channels that published an address. Only the channel base has
+# addresses at all: a hiring post on X carries a profile, not a mailbox.
+MAIL_ACCOUNT_SETTING = "smtp"
+MAIL_TEMPLATE_SETTING = "mail_template"
+
+
+def _mail_account() -> mailer.MailAccount | None:
+    return mailer.MailAccount.loads(secrets.get(MAIL_ACCOUNT_SETTING) or "null")
+
+
+def _require_mail_account() -> mailer.MailAccount:
+    account = _mail_account()
+    if account is None:
+        raise HTTPException(
+            status_code=428,
+            detail="Nenhuma conta de e-mail configurada. Configure a sua para enviar.",
+        )
+    return account
+
+
+def _mail_template() -> tuple[str, str]:
+    try:
+        saved = json.loads(secrets.get(MAIL_TEMPLATE_SETTING) or "{}")
+        subject, body = str(saved["subject"]), str(saved["body"])
+        if subject.strip() and body.strip():
+            return subject, body
+    except (ValueError, KeyError, TypeError):
+        pass
+    return mailer.DEFAULT_SUBJECT, mailer.DEFAULT_BODY
+
+
+def _sent_today() -> int:
+    """Messages in the last 24 hours — a rolling window, not a calendar day.
+
+    A calendar day would let forty go out at 23:50 and forty more at 00:10,
+    which is exactly the burst the cap exists to prevent.
+    """
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    return leads.emailed_since(since.isoformat(timespec="seconds"))
+
+
+async def _mail_state() -> MailStateOut:
+    account = _mail_account()
+    subject, body = _mail_template()
+    if account is None:
+        return MailStateOut(
+            configured=False,
+            subject=subject,
+            body=body,
+            placeholders=list(mailer.PLACEHOLDERS),
+        )
+    sent = await asyncio.to_thread(_sent_today)
+    return MailStateOut(
+        configured=True,
+        user=account.user,
+        host=account.host,
+        port=account.port,
+        from_name=account.from_name,
+        daily_limit=account.daily_limit,
+        sent_today=sent,
+        remaining_today=max(0, account.daily_limit - sent),
+        subject=subject,
+        body=body,
+        placeholders=list(mailer.PLACEHOLDERS),
+    )
+
+
+@app.get("/api/mail", response_model=MailStateOut)
+async def read_mail() -> MailStateOut:
+    return await _mail_state()
+
+
+@app.post("/api/mail/account", response_model=MailStateOut)
+async def save_mail_account(payload: MailAccountIn) -> MailStateOut:
+    current = _mail_account()
+    user = payload.user.strip()
+    password = payload.password or (
+        current.password if current and current.user == user else ""
+    )
+    if not password:
+        raise HTTPException(status_code=422, detail="Informe a senha de app da conta.")
+
+    host, port = payload.host.strip(), payload.port
+    if not host:
+        guessed = mailer.guess_host(user)
+        if guessed is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Não conheço o servidor desse provedor. Abra as opções e "
+                    "informe o servidor SMTP e a porta."
+                ),
+            )
+        host, port = guessed
+    account = mailer.MailAccount(
+        host=host,
+        port=port or 587,
+        user=user,
+        # App passwords are shown in groups of four; the spaces are not part
+        # of the secret and some servers reject them.
+        password=password.replace(" ", ""),
+        from_name=payload.from_name.strip(),
+        daily_limit=min(payload.daily_limit, mailer.MAX_DAILY_LIMIT),
+    )
+    await asyncio.to_thread(secrets.set, MAIL_ACCOUNT_SETTING, account.dumps())
+    return await _mail_state()
+
+
+@app.delete("/api/mail/account", status_code=204)
+async def forget_mail_account() -> None:
+    await asyncio.to_thread(secrets.remove, MAIL_ACCOUNT_SETTING)
+
+
+@app.put("/api/mail/template", response_model=MailStateOut)
+async def save_mail_template(payload: MailTemplateIn) -> MailStateOut:
+    await asyncio.to_thread(
+        secrets.set,
+        MAIL_TEMPLATE_SETTING,
+        json.dumps({"subject": payload.subject, "body": payload.body}),
+    )
+    return await _mail_state()
+
+
+#: What the placeholders become in a test message, which has no lead behind it.
+_SAMPLE_LEAD = {
+    "title": "Canal de Exemplo",
+    "handle": "@canaldeexemplo",
+    "niche": "finanças pessoais",
+    "subscribers": 48_000,
+}
+
+
+@app.post("/api/mail/test", status_code=204)
+async def send_mail_test() -> None:
+    """Send the current template to the sender's own address.
+
+    Proves the account works and shows the message as a recipient will see it,
+    without spending a lead or a slot of the daily limit.
+    """
+    account = _require_mail_account()
+    subject, body = _mail_template()
+    try:
+        await asyncio.to_thread(
+            mailer.send,
+            account,
+            account.user,
+            "[teste] " + mailer.render(subject, _SAMPLE_LEAD),
+            mailer.render(body, _SAMPLE_LEAD),
+        )
+    except mailer.MailError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+# One message at a time, whatever the interface does. Without this, two
+# requests could both read "39 sent" and both go out as the fortieth.
+_mail_lock = asyncio.Lock()
+
+
+@app.post("/api/mail/send", response_model=MailSentOut)
+async def send_mail(payload: MailSendIn) -> MailSentOut:
+    """Send the saved template to one lead, then mark the lead as contacted.
+
+    One lead per request on purpose: the interface paces the batch and can stop
+    between any two messages, and a failure names the one lead it happened on.
+    """
+    account = _require_mail_account()
+    async with _mail_lock:
+        lead = await asyncio.to_thread(leads.get, payload.lead_id)
+        if lead is None:
+            raise HTTPException(status_code=404, detail="Canal não encontrado na base.")
+        to = (lead.get("email") or "").strip()
+        if not to:
+            raise HTTPException(
+                status_code=422, detail="Esse canal não publicou um e-mail."
+            )
+        if lead.get("emailed_at") and not payload.resend:
+            raise HTTPException(
+                status_code=409, detail="Esse canal já recebeu um e-mail seu."
+            )
+
+        sent = await asyncio.to_thread(_sent_today)
+        if sent >= account.daily_limit:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"Limite de {account.daily_limit} e-mails em 24 horas atingido. "
+                    "O envio volta a ficar disponível conforme os mais antigos "
+                    "saem da janela."
+                ),
+            )
+
+        subject, body = _mail_template()
+        try:
+            await asyncio.to_thread(
+                mailer.send,
+                account,
+                to,
+                mailer.render(subject, lead),
+                mailer.render(body, lead),
+            )
+        except mailer.MailError as error:
+            # 422 for an address the server would not take, 502 for an account
+            # that is not working: the interface skips the first and stops on
+            # the second.
+            code = 422 if error.recipient else 502
+            raise HTTPException(status_code=code, detail=str(error)) from error
+
+        await asyncio.to_thread(leads.mark_emailed, payload.lead_id)
+        sent += 1
+    return MailSentOut(
+        to=to,
+        sent_today=sent,
+        remaining_today=max(0, account.daily_limit - sent),
+    )
 
 
 # ============================================================= X / pedidos

@@ -140,6 +140,7 @@ Prospector/
 │   │   ├── scoring.py          score de oportunidade
 │   │   ├── keyring.py          pool de chaves, quota e rodízio
 │   │   ├── leads.py            a base de canais (SQLite)
+│   │   ├── mailer.py           envio de e-mail pela conta do usuário (SMTP)
 │   │   │
 │   │   ├── xsearch.py          busca no X via Apify, e o teto de custo
 │   │   ├── hiring.py           separa quem contrata de quem se oferece
@@ -150,7 +151,7 @@ Prospector/
 │   ├── desktop.py            ponto de entrada do aplicativo
 │   ├── packaging/            receitas do PyInstaller (Win/Mac), ícones,
 │   │                         instalador e desinstalador
-│   └── tests/                232 testes
+│   └── tests/                257 testes
 ├── frontend/                 Next.js 16 + React 19 (TypeScript)
 │   ├── app/                    a interface (uma página só)
 │   ├── components/
@@ -357,11 +358,47 @@ Célula vazia significa "o canal não publicou", nunca "não fomos olhar".
 
 ---
 
+## Enviar e-mails
+
+A aba **Enviar e-mails** escreve para os canais da base que publicaram um
+endereço. A mensagem sai da **sua** conta, por SMTP — não há serviço de envio
+no meio, e a resposta volta para a mesma caixa de onde saiu.
+
+**A conta.** Informe o e-mail e uma **senha de app** (não a senha da conta).
+No Gmail: ative a verificação em duas etapas e gere a senha em
+<https://myaccount.google.com/apppasswords>. Gmail, Outlook, Yahoo, iCloud e
+Zoho são reconhecidos pelo endereço; para outro provedor, informe servidor e
+porta. A senha fica cifrada em `tokens.json`, no mesmo cofre das chaves de API,
+e nenhuma rota a devolve.
+
+**A mensagem.** Um assunto e um texto, com quatro campos trocados por canal:
+`{canal}`, `{handle}`, `{nicho}` e `{inscritos}`. A tela mostra a mensagem como
+o primeiro destinatário vai receber, e **Enviar um teste para mim** manda a
+mesma mensagem para o seu próprio endereço sem gastar um lead.
+
+**O envio.** Você marca os canais, escolhe o intervalo e envia. As regras são
+do backend, não da tela:
+
+| Regra | Por quê |
+| --- | --- |
+| uma mensagem por destinatário | nunca uma lista em cópia: cada canal recebe a sua |
+| teto por 24 horas (padrão 40, máximo 300) | muito envio igual de uma vez queima a caixa inteira |
+| janela móvel, não dia do calendário | 40 às 23h50 e mais 40 às 00h10 seria a mesma rajada |
+| o mesmo canal não recebe duas vezes | a base guarda `emailed_at`, e uma busca nova não apaga |
+| falha não marca o lead | marcar esconderia um canal que não recebeu nada |
+
+Cada canal enviado passa sozinho para **Contatado**. Sair da tela no meio
+interrompe o envio.
+
+Só a base de canais tem e-mail. Um pedido no X traz um perfil, não um endereço.
+
+---
+
 ## Desenvolvimento
 
 ```bash
 # testes
-cd backend && .venv/Scripts/python -m pytest -q        # 232 testes
+cd backend && .venv/Scripts/python -m pytest -q        # 257 testes
 
 # interface
 cd frontend && npx tsc --noEmit && npm run dev         # http://localhost:3000
@@ -390,6 +427,9 @@ O contato comercial é responsabilidade de quem contata. No Brasil vale a LGPD:
 identifique-se, informe como chegou ao contato e respeite pedidos de
 descadastramento. Um e-mail publicado numa descrição de canal foi publicado
 para contato — um perfil que pediu editor pediu que falassem com ele. Nenhum
-dos dois é permissão para lista de disparo.
+dos dois é permissão para lista de disparo: o envio de e-mails do app manda uma
+mensagem individual por canal, com teto diário, e o texto padrão já diz de onde
+veio o endereço e como pedir para não receber mais. Tirar esse parágrafo é
+decisão de quem envia, e a responsabilidade vai junto.
 
 Não afiliado ao YouTube, ao Google, ao X nem ao Apify.

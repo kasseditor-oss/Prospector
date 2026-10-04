@@ -180,6 +180,39 @@ export type ApifyToken = {
   error: string | null;
 };
 
+/* ------------------------------------------------------------------ e-mail */
+
+/** The mailbox and the message, as the screen is allowed to know them. The
+ *  password is never part of this: it goes in and does not come back. */
+export type MailState = {
+  configured: boolean;
+  user: string;
+  host: string;
+  port: number;
+  from_name: string;
+  daily_limit: number;
+  /** Messages sent in the last 24 hours, and what is left before the cap. */
+  sent_today: number;
+  remaining_today: number;
+  subject: string;
+  body: string;
+  /** The names the template can use, without the braces. */
+  placeholders: string[];
+};
+
+export type MailAccountInput = {
+  user: string;
+  /** Empty keeps the password already saved for this address. */
+  password: string;
+  /** Empty lets the backend work it out from the address. */
+  host: string;
+  port: number;
+  from_name: string;
+  daily_limit: number;
+};
+
+export type MailSent = { to: string; sent_today: number; remaining_today: number };
+
 /** An API error carrying the message the backend wanted the user to read. */
 export class ApiError extends Error {
   constructor(
@@ -287,6 +320,24 @@ export const api = {
     qs.set("limit", String(params.limit ?? 500));
     return request<PostsResponse>(`/posts?${qs.toString()}`);
   },
+  mail: () => request<MailState>("/mail"),
+  saveMailAccount: (account: MailAccountInput) =>
+    request<MailState>("/mail/account", {
+      method: "POST",
+      body: JSON.stringify(account),
+    }),
+  removeMailAccount: () => request<void>("/mail/account", { method: "DELETE" }),
+  saveMailTemplate: (subject: string, body: string) =>
+    request<MailState>("/mail/template", {
+      method: "PUT",
+      body: JSON.stringify({ subject, body }),
+    }),
+  sendMailTest: () => request<void>("/mail/test", { method: "POST" }),
+  sendMail: (leadId: string) =>
+    request<MailSent>("/mail/send", {
+      method: "POST",
+      body: JSON.stringify({ lead_id: leadId }),
+    }),
   removePost: (id: string) =>
     request<void>(`/posts/${encodeURIComponent(id)}`, { method: "DELETE" }),
   clearPosts: () => request<{ removed: number }>("/posts", { method: "DELETE" }),
@@ -303,6 +354,8 @@ export type LeadQuery = {
 /** A saved channel, plus where it stands with you and its history. */
 export type Lead = Channel & {
   status: Status;
+  /** When the app last sent this lead a message. Null if it never did. */
+  emailed_at: string | null;
   first_seen: string;
   last_seen: string;
 };
@@ -332,6 +385,22 @@ export function formatDays(days: number | null, locale = "pt-BR"): string {
   const months = Math.round(days / 30);
   if (locale === "pt-BR") return `${months} ${months > 1 ? "meses" : "mês"}`;
   return `${months} ${months > 1 ? "months" : "month"}`;
+}
+
+/** Fill a message template from one channel. Mirrors render() in
+ *  backend/app/mailer.py — this copy only draws the preview, the backend's is
+ *  the one that writes what is actually sent. */
+export function renderTemplate(template: string, channel: Channel): string {
+  const values: Record<string, string> = {
+    canal: channel.title,
+    handle: channel.handle ?? "",
+    nicho: channel.niche,
+    inscritos: channel.subscribers.toLocaleString("pt-BR"),
+  };
+  return Object.entries(values).reduce(
+    (text, [name, value]) => text.split(`{${name}}`).join(value),
+    template,
+  );
 }
 
 /** Meter bands: the score reads like a level meter, not a brand gradient. */

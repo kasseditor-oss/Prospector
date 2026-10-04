@@ -5,6 +5,7 @@ import { Icons } from "@/components/Icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ChannelTable } from "@/components/ChannelTable";
 import { PostsTable } from "@/components/PostsTable";
+import { MailPanel } from "@/components/MailPanel";
 import {
   ApiError,
   COUNTRIES,
@@ -24,7 +25,7 @@ import {
   type XSearchResponse,
 } from "@/lib/api";
 
-type Page = "search" | "saved" | "keys";
+type Page = "search" | "saved" | "mail" | "keys";
 
 /**
  * The funnel's words, read once from the backend.
@@ -103,6 +104,9 @@ export default function Dashboard() {
   }, [refreshKeys, refreshToken]);
 
   const isX = source === "x";
+  // Only the channel base has addresses: a hiring post carries a profile, not
+  // a mailbox. Switching to X while on the e-mail screen lands on the search.
+  const view: Page = isX && page === "mail" ? "search" : page;
   const credentials = keys.length + (token?.configured ? 1 : 0);
 
   return (
@@ -137,7 +141,7 @@ export default function Dashboard() {
           <p className="rail-lbl">{isX ? "Pedidos no X" : "Canais do YouTube"}</p>
           <button
             type="button"
-            aria-current={page === "search" ? "page" : undefined}
+            aria-current={view === "search" ? "page" : undefined}
             onClick={() => setPage("search")}
           >
             <Icons.Search size={17} />
@@ -145,17 +149,27 @@ export default function Dashboard() {
           </button>
           <button
             type="button"
-            aria-current={page === "saved" ? "page" : undefined}
+            aria-current={view === "saved" ? "page" : undefined}
             onClick={() => setPage("saved")}
           >
             <Icons.Board size={17} />
             <span>Base</span>
             <span className="count">{isX ? postCount : savedCount}</span>
           </button>
+          {isX ? null : (
+            <button
+              type="button"
+              aria-current={view === "mail" ? "page" : undefined}
+              onClick={() => setPage("mail")}
+            >
+              <Icons.Mail size={17} />
+              <span>Enviar e-mails</span>
+            </button>
+          )}
           <p className="rail-lbl">Configuração</p>
           <button
             type="button"
-            aria-current={page === "keys" ? "page" : undefined}
+            aria-current={view === "keys" ? "page" : undefined}
             onClick={() => setPage("keys")}
           >
             <Icons.Key size={17} />
@@ -170,7 +184,7 @@ export default function Dashboard() {
         </nav>
 
         <div className="main" id="conteudo">
-          {page === "keys" ? (
+          {view === "keys" ? (
             <KeysPanel
               keys={keys}
               quota={quota}
@@ -180,7 +194,7 @@ export default function Dashboard() {
               notify={notify}
             />
           ) : isX ? (
-            page === "search" ? (
+            view === "search" ? (
               <XSearchPanel
                 token={token}
                 notify={notify}
@@ -197,7 +211,9 @@ export default function Dashboard() {
                 goSearch={() => setPage("search")}
               />
             )
-          ) : page === "search" ? (
+          ) : view === "mail" ? (
+            <MailPanel notify={notify} goSearch={() => setPage("search")} />
+          ) : view === "search" ? (
             <SearchPanel
               keys={keys}
               onSpent={refreshKeys}
